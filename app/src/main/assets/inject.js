@@ -27,6 +27,8 @@
   var SEEK_SECONDS = 10;
   var FOCUS_ATTR = 'data-fbtv-focus';
   var THEATER_ATTR = 'data-fbtv-theater';
+  var MEDIA_ATTR = 'data-fbtv-media';  // a post's photo/video box, shrunk so the whole post fits on screen
+  var MIN_MEDIA_SCALE = 0.5;
   var CLICKABLE = 'a[href],button,[role=button],[role=link],[role=tab],[role=menuitem],[role=menuitemradio],' +
       '[role=menuitemcheckbox],[role=option],[role=checkbox],[role=switch],[role=radio],[role=slider],' +
       'input:not([type=hidden]),textarea,select,[contenteditable=true]';
@@ -203,7 +205,9 @@
 
   /** The main photo or video of a post. */
   function postMedia(post) {
-    var pw = rectOf(post).width, videos = post.querySelectorAll('video');
+    // Media shrunk by fitPost is narrower than half the post; compare at its own scale.
+    var box = post.querySelector('[' + MEDIA_ATTR + ']');
+    var pw = rectOf(post).width * (box ? (parseFloat(box.style.zoom) || 1) : 1), videos = post.querySelectorAll('video');
     for (var i = 0; i < videos.length; i++) if (rectOf(videos[i]).width >= pw * 0.5) return videos[i];
     var best = null, bestArea = 0, imgs = post.querySelectorAll('img');
     for (var j = 0; j < imgs.length; j++) {
@@ -530,7 +534,13 @@
       '[' + THEATER_ATTR + ']{position:fixed !important;left:0 !important;top:var(--fbtv-top,0px) !important;' +
       'width:100vw !important;height:calc(100vh - var(--fbtv-top,0px)) !important;max-width:none !important;' +
       'max-height:none !important;z-index:2147483647 !important;background:#000 !important;' +
-      'object-fit:contain !important;transform:none !important;outline:none !important;}';
+      'object-fit:contain !important;transform:none !important;outline:none !important;}' +
+      // A feed video playing in theater mode: undo fitPost's shrinking, which would also shrink the video.
+      '[' + MEDIA_ATTR + ']:has([' + THEATER_ATTR + ']){zoom:1 !important;}' +
+      // The right-hand column (sponsored, contacts) stacks above the theater video; hide it meanwhile.
+      'body:has([' + THEATER_ATTR + ']) [role=complementary]{visibility:hidden !important;}' +
+      // The ring inside shrunk media is scaled too; keep it about as thick as elsewhere.
+      '[' + MEDIA_ATTR + '] [' + FOCUS_ATTR + ']{outline-width:7px !important;}';
   (document.head || document.documentElement).appendChild(style);
 
   function isEditable(el) {
@@ -595,6 +605,57 @@
     }
     setFocus(best, false);
     return true;
+  }
+
+  // ---------- Fit posts on the screen ----------
+
+  // Facebook's feed column is 500 CSS px wide at any zoom, and a post's photo or video is up to 550 px tall, so a
+  // post is taller than the screen. Shrink the media (never the text) until the whole post fits under the top bar.
+
+  /** The outermost box around a post's main photo or video that is no bigger than the media itself. */
+  function mediaBox(post) {
+    var marked = post.querySelector('[' + MEDIA_ATTR + ']');
+    if (marked) return marked;
+    var pw = rectOf(post).width, media = null, mediaH = 0;
+    post.querySelectorAll('video,img').forEach(function (e) {
+      var r = rectOf(e);
+      if (r.width >= pw * 0.5 && r.height > mediaH) { media = e; mediaH = r.height; }
+    });
+    if (!media || mediaH < 100) return null;
+    var box = media;
+    for (var p = media.parentElement; p && p !== post; p = p.parentElement) {
+      var r = rectOf(p);
+      if (r.height > mediaH + 2 || r.width > pw + 2) break;
+      box = p;
+    }
+    return box;
+  }
+
+  function fitPost(post) {
+    var box = mediaBox(post);
+    if (!box) return;
+    var scale = parseFloat(box.style.zoom) || 1;
+    var mediaH = rectOf(box).height / scale;  // unshrunk height
+    var rest = rectOf(post).height - mediaH * scale;  // header, text, link card, Like/Comment/Share
+    var room = innerHeight - headerBottom() - 16;
+    var want = Math.max(MIN_MEDIA_SCALE, Math.min(1, (room - rest) / mediaH));
+    want = Math.round(want * 100) / 100;
+    if (Math.abs(want - scale) < 0.02) return;
+    box.setAttribute(MEDIA_ATTR, '');
+    box.style.zoom = want === 1 ? '' : String(want);
+  }
+
+  /**
+   * Posts on screen and up to two screens below it. Not the ones above: resizing those would shift the page under
+   * the ring while Facebook is still loading the feed.
+   */
+  function fitPosts() {
+    if (isReels() || theaterVideo) return;
+    var ps = posts();
+    for (var i = 0; i < ps.length; i++) {
+      var r = rectOf(ps[i]);
+      if (r.bottom > 0 && r.top < innerHeight * 3 && r.height > 0) fitPost(ps[i]);
+    }
   }
 
   // ---------- Scrolling ----------
@@ -1242,6 +1303,7 @@
 
   function refresh() {
     updateReelCaptions();
+    fitPosts();
     if (pointerMode) return;
     if (location.pathname !== lastPath) {
       note('path ' + lastPath + ' -> ' + location.pathname + ' restoring=' + restoring);

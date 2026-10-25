@@ -28,6 +28,9 @@ All keys are handled inside the app only; no system-wide remote settings are cha
 On the top bar, Left / Right move between tabs (Home, Reels, Friends...), Down goes back into the page and OK
 opens the tab.
 
+Each post fits on one screen: when a post's photo or video would make it taller than the screen, the photo or video
+is shown smaller (down to half size); the text keeps its size.
+
 ### Reels
 
 | Key | Action |

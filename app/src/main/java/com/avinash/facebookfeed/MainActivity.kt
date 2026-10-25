@@ -554,8 +554,11 @@ class MainActivity : Activity() {
         private const val EXTRA_URL = "url"
         private val PHONE_SITE_HOSTS = setOf("m.facebook.com", "mobile.facebook.com", "touch.facebook.com", "mbasic.facebook.com")
 
-        /** Page zoom in percent: 125 lays the page out 768 CSS px wide on a 1080p TV (100 = 960). Tune this on the TV. */
-        private const val PAGE_ZOOM_PERCENT = 125
+        /**
+         * Page zoom in percent: 100 lays the page out 960 CSS px wide on a 1080p TV, with feed text about 24 px tall.
+         * At 125 a single post was 1.5 screens tall. Tune this on the TV.
+         */
+        private const val PAGE_ZOOM_PERCENT = 100
 
         /** Reels only: size of the account name and caption over the video, in percent of Facebook's (100 = unchanged). */
         private const val REELS_CAPTION_SCALE_PERCENT = 70
