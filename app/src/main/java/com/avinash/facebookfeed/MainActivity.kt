@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private val injectScript by lazy {
         assets.open("inject.js").bufferedReader().use { it.readText() }
             .replace("__PAGE_ZOOM_PERCENT__", PAGE_ZOOM_PERCENT.toString())
+            .replace("__DEBUG__", isDebug.toString())
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

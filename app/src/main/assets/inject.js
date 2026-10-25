@@ -5,15 +5,18 @@
 //  - Feed:   Up/Down move between the parts of a post that matter (photo/video, "See more", Like/Comment/Share)
 //            and on to the next post; Left/Right move along the Like/Comment/Share row. Up from the first post
 //            reaches the top bar (Home, Reels, Friends...).
-//  - Reels:  Up/Down = previous/next reel (Facebook's own buttons), Right = Like/Comment/Share column,
-//            Left = back to the video, or rewind while on the video. OK plays/pauses.
-//  - Feed videos: OK plays them in "theater mode" (stretched over the page); there OK plays/pauses and
-//            Left/Right seek. Back returns to the feed. Sound is always switched on, for reels too.
+//  - Reels (watch mode): Left/Right seek 10 s (held: one jump every 200 ms), Up/Down previous/next reel (the
+//            reels' scroll-snap container), OK plays/pauses. OK held 800 ms: button mode, where the focus ring
+//            moves between Like/Comment/Share and the other buttons; Back, OK held again or 8 s idle return to
+//            watch mode. A "+10s" flash and a progress bar show while seeking.
+//  - Feed videos: OK plays them in "theater mode" (stretched over the page), which is watch mode too: OK
+//            plays/pauses, Left/Right seek. Back returns to the feed. Sound is always switched on, for reels too.
 //  - Dialogs (comments, photo viewer, menus) and every other page: move to the nearest clickable element.
 //  - Back (from Kotlin, via __fbtv.back()): leave theater mode / a text field / a dialog, leave Reels in one
 //            step, or jump to the top bar from deep in the feed.
 (function () {
   var ZOOM = __PAGE_ZOOM_PERCENT__ / 100;
+  var DEBUG = __DEBUG__;  // true in debug builds: log the detected mode on every key
   var SCROLL_STEP = 350;
   var SEEK_SECONDS = 10;
   var FOCUS_ATTR = 'data-fbtv-focus';
@@ -321,6 +324,14 @@
     return bs.length === 2 ? { prev: bs[0], next: bs[1] } : null;
   }
 
+  /** The vertical scroll-snap container that holds the reels. */
+  function reelScroller(video) {
+    for (var e = video && video.parentElement; e; e = e.parentElement) {
+      if (getComputedStyle(e).scrollSnapType.indexOf('y') === 0 && e.scrollHeight > e.clientHeight + 4) return e;
+    }
+    return null;
+  }
+
   var pendingReel = null;
   function changeReel(dir) {
     if (restoring) {
@@ -328,8 +339,12 @@
       pendingReel = dir;
       return;
     }
-    var nav = reelNavButtons(), video = reelVideo();
-    if (nav) {
+    var nav, video = reelVideo(), scroller = reelScroller(video);
+    if (scroller) {
+      // The reels sit in a scroll-snap container, one reel per screen: scrolling it by its height moves exactly one
+      // reel, and Facebook starts the next one playing.
+      scroller.scrollBy({ top: (dir === 'down' ? 1 : -1) * scroller.clientHeight, behavior: 'smooth' });
+    } else if ((nav = reelNavButtons())) {
       (dir === 'down' ? nav.next : nav.prev).click();
     } else if (video) {
       // Fallback: Facebook's reel viewer also listens for the arrow keys on its own container.
@@ -411,7 +426,7 @@
     if (isReels()) {
       var v = reelVideo(), nav = reelNavButtons();
       var arrows = nav ? [nav.prev, nav.next].filter(function (b) { return b.getAttribute('aria-disabled') !== 'true'; }) : [];
-      return headerTargets().concat(v ? [v] : [], reelActions(v), arrows);
+      return headerTargets().concat(v && !buttonMode ? [v] : [], reelActions(v), arrows);
     }
     var ps = posts();
     if (ps.length === 0) return clickables(document.body, 12);
@@ -888,6 +903,128 @@
 
   var DIRS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
+  // ---------- Watch mode and button mode ----------
+  //
+  // Watch mode (a reel, or a full-screen/theater video): Left/Right seek 10 s, Up/Down previous/next reel, OK
+  // plays/pauses, OK held 800 ms switches to button mode. Button mode (reels only): the normal focus ring moves
+  // between Like/Comment/Share and the other buttons; Back, OK held again, or 8 s without a key returns to watch mode.
+
+  var LONG_PRESS_MS = 800, BUTTON_MODE_IDLE_MS = 8000, SEEK_REPEAT_MS = 200;
+  var buttonMode = false, buttonModeTimer = 0, okTimer = 0, okLong = false, okDown = false, lastSeekAt = 0;
+  var lastReelKeyAt = 0;
+
+  function mode() {
+    if (buttonMode && inReelViewer()) return 'button';
+    return inReelViewer() || theaterVideo || fullscreenVideo() ? 'watch' : 'browse';
+  }
+
+  /** A fixed, non-interactive overlay element: never focusable, never receives pointer events. */
+  function overlay(id, css) {
+    var el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      el.setAttribute('aria-hidden', 'true');
+      el.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' + css;
+      document.documentElement.appendChild(el);
+    }
+    return el;
+  }
+
+  var bannerEl = null;
+  function showBanner() {
+    bannerEl = overlay('fbtv-banner', 'top:72px;left:50%;transform:translateX(-50%);padding:8px 18px;' +
+        'border-radius:20px;background:rgba(0,0,0,.75);color:#fff;font:600 18px/1.2 sans-serif;white-space:nowrap;');
+    bannerEl.textContent = 'Buttons: Back to return';
+  }
+  function hideBanner() {
+    if (bannerEl) bannerEl.remove();
+    bannerEl = null;
+  }
+
+  function enterButtonMode() {
+    buttonMode = true;
+    showBanner();
+    var like = reelActions(reelVideo())[0];
+    if (like) setFocus(like, false);
+    touchButtonMode();
+    note('button mode on');
+  }
+
+  /** Leave button mode; back on the reel's video unless something else (comments, another page) took over. */
+  function exitButtonMode(refocus) {
+    if (!buttonMode) return false;
+    buttonMode = false;
+    clearTimeout(buttonModeTimer);
+    hideBanner();
+    if (refocus && inReelViewer()) { var v = reelVideo(); if (v) setFocus(v, false); }
+    note('button mode off');
+    return true;
+  }
+
+  function touchButtonMode() {
+    clearTimeout(buttonModeTimer);
+    buttonModeTimer = setTimeout(function () { exitButtonMode(true); }, BUTTON_MODE_IDLE_MS);
+  }
+
+  // Seek overlay: a big "+10s" / "-10s" in the middle and a thin progress bar at the bottom, gone 1.5 s after the
+  // last seek. Holding the key adds up ("+30s").
+  var osdTimer = 0, osdTotal = 0;
+  function showSeek(v, seconds) {
+    var osd = overlay('fbtv-osd', 'inset:0;');
+    if (!osd.firstChild) {
+      osd.innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+          'padding:12px 28px;border-radius:16px;background:rgba(0,0,0,.6);color:#fff;font:700 56px/1 sans-serif"></div>' +
+          '<div style="position:absolute;left:0;right:0;bottom:0;height:6px;background:rgba(255,255,255,.3)">' +
+          '<div style="height:100%;width:0;background:#fff"></div></div>';
+    }
+    osdTotal = osdTotal !== 0 && (osdTotal > 0) !== (seconds > 0) ? seconds : osdTotal + seconds;
+    osd.firstChild.textContent = (osdTotal > 0 ? '+' : osdTotal < 0 ? '' : '±') + osdTotal + 's';
+    osd.lastChild.firstChild.style.width = (isFinite(v.duration) && v.duration > 0 ? 100 * v.currentTime / v.duration : 0) + '%';
+    clearTimeout(osdTimer);
+    osdTimer = setTimeout(function () { osd.remove(); osdTotal = 0; }, 1500);
+  }
+
+  function seekWithOverlay(v, seconds) {
+    if (!v) return;
+    var now = Date.now();
+    // A held key repeats about 20 times a second, and WebView doesn't flag those events as repeats, so limit by time:
+    // at most one 10 s jump every 200 ms, tapped or held.
+    if (now - lastSeekAt < SEEK_REPEAT_MS) return;
+    lastSeekAt = now;
+    var before = v.currentTime;
+    seek(v, seconds);
+    // Show what actually happened: near either end the jump is clamped to less than 10 s.
+    showSeek(v, Math.round(v.currentTime - before) || (seconds > 0 ? 0 : -0));
+  }
+
+  /** OK in watch/button mode: act on release, so a long hold can switch modes instead. */
+  function okPressed(e) {
+    if (e.repeat || okDown) return;
+    okDown = true;
+    okLong = false;
+    clearTimeout(okTimer);
+    if (!inReelViewer()) return;  // full-screen feed video: no button mode
+    okTimer = setTimeout(function () {
+      okLong = true;
+      if (buttonMode) exitButtonMode(true); else enterButtonMode();
+    }, LONG_PRESS_MS);
+  }
+
+  window.addEventListener('keyup', function (e) {
+    if (e.key !== 'Enter' || !okDown) return;
+    okDown = false;
+    clearTimeout(okTimer);
+    var m = mode();
+    if (!okLong) {
+      if (m === 'button') { touchButtonMode(); if (focused) activate(focused); }
+      else if (m === 'watch') togglePlay(theaterVideo || fullscreenVideo() || reelVideo());
+    }
+    okLong = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
   window.addEventListener('keydown', function (e) {
     var dir = DIRS[e.key];
     if (!dir && e.key !== 'Enter') return;
@@ -895,15 +1032,44 @@
     if (document.activeElement && isEditable(document.activeElement) && document.activeElement === focused) return;
 
     if (isReels()) finishEntryRestore();
+    if (buttonMode && !inReelViewer()) exitButtonMode(false);  // comments opened, or left Reels
+
+    var m = mode();
+    if (DEBUG) {
+      note('key ' + e.key + (e.repeat ? ' (repeat)' : '') + ' mode=' + m);
+      console.log('[fbtv] key=' + e.key + (e.repeat ? ' repeat' : '') + ' mode=' + m);
+    }
 
     var fsVideo = theaterVideo || fullscreenVideo();
     if (fsVideo) {
       // Theater or full-screen video: OK plays/pauses, Left/Right seek, Up/Down do nothing. Back leaves it.
-      if (e.key === 'Enter') togglePlay(fsVideo);
-      else if (dir === 'left' || dir === 'right') seek(fsVideo, dir === 'left' ? -SEEK_SECONDS : SEEK_SECONDS);
+      if (e.key === 'Enter') okPressed(e);
+      else if (dir === 'left' || dir === 'right') seekWithOverlay(fsVideo, dir === 'left' ? -SEEK_SECONDS : SEEK_SECONDS);
       e.preventDefault();
       e.stopPropagation();
       return;
+    }
+
+    if (m === 'watch') {
+      // A reel: the keys control the video; the focus ring rests on it.
+      var rv = reelVideo();
+      if (rv && focused !== rv) setFocus(rv, false);
+      if (e.key === 'Enter') okPressed(e);
+      else if (dir === 'left' || dir === 'right') seekWithOverlay(rv, dir === 'left' ? -SEEK_SECONDS : SEEK_SECONDS);
+      else if (Date.now() - lastReelKeyAt > 600) { lastReelKeyAt = Date.now(); changeReel(dir); }
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    if (m === 'button') {
+      touchButtonMode();
+      if (e.key === 'Enter') {
+        okPressed(e);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
     }
 
     var hadFocus = focusValid() && onScreen(focused);
@@ -917,18 +1083,13 @@
 
     var smooth = !e.repeat;
     var video = focused.tagName === 'VIDEO' ? focused : null;
-    var inReels = inReelViewer();
 
     if (e.key === 'Enter') {
       activate(focused);
-    } else if (inReels && video && (dir === 'up' || dir === 'down')) {
-      changeReel(dir);
-    } else if (video && dir === 'left' && (inReels || playing(video))) {
-      seek(video, inReels ? -5 : -SEEK_SECONDS);
-    } else if (video && dir === 'right' && playing(video) && !inReels) {
+    } else if (video && dir === 'left' && playing(video)) {
+      seek(video, -SEEK_SECONDS);
+    } else if (video && dir === 'right' && playing(video)) {
       seek(video, SEEK_SECONDS);
-    } else if (inReels && !video && dir === 'left' && reelActions(reelVideo()).indexOf(focused) >= 0) {
-      setFocus(reelVideo(), false);
     } else {
       move(dir, smooth);
     }
@@ -940,6 +1101,10 @@
 
   var lastCommentsClose = 0;
   function back() {
+    if (buttonMode && inReelViewer()) {
+      exitButtonMode(true);  // stays in the reel
+      return 'handled';
+    }
     if (theaterVideo) {
       exitTheater();
       return 'handled';
