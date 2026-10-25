@@ -1,14 +1,22 @@
 package com.avinash.facebookfeed
 
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
+import android.view.Gravity
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -22,6 +30,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.TextView
 import java.io.File
 
 class MainActivity : Activity() {
@@ -48,12 +57,34 @@ class MainActivity : Activity() {
 
         setContentView(R.layout.activity_main)
         webView = findViewById(R.id.webview)
+        addPointerViews()
         configureWebView()
         logWebViewVersion()
         trimCacheIfNeeded()
 
-        webView.loadUrl(HOME_URL)
+        webView.loadUrl(debugUrl(intent) ?: HOME_URL)
         webView.requestFocus()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        debugUrl(intent)?.let { if (!webViewDestroyed) webView.loadUrl(it) }
+    }
+
+    /**
+     * Debug builds only: `adb shell am start -n com.avinash.facebookfeed.debug/com.avinash.facebookfeed.MainActivity
+     * --es url https://...` opens that page, for testing pages Facebook shows only sometimes. https only.
+     */
+    private fun debugUrl(intent: Intent?): String? {
+        if (!BuildConfig.DEBUG) return null
+        val url = intent?.getStringExtra(EXTRA_URL) ?: return null
+        if (Uri.parse(url).scheme?.lowercase() != "https") {
+            Log.w(TAG, "Ignored url extra (https only): $url")
+            return null
+        }
+        Log.i(TAG, "Opening url extra: $url")
+        return url
     }
 
     private fun configureWebView() {
@@ -126,6 +157,13 @@ class MainActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) handleBack()
             return true
         }
+        if (event.keyCode == POINTER_TOGGLE_KEY) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !webViewDestroyed) {
+                if (pointerOn) leavePointerMode() else setPointerMode(true, manual = true)
+            }
+            return true
+        }
+        if (pointerOn && handlePointerKey(event)) return true
         if (event.keyCode == KeyEvent.KEYCODE_0) {
             // 0: reload the page, in case Facebook gets stuck.
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !webViewDestroyed) webView.reload()
@@ -161,6 +199,10 @@ class MainActivity : Activity() {
             exitApp()
             return
         }
+        if (pointerOn) {
+            leavePointerMode()
+            return
+        }
         webView.evaluateJavascript("window.__fbtv ? window.__fbtv.back() : 'none'") { result ->
             if (webViewDestroyed) return@evaluateJavascript
             when (result?.trim('"')) {
@@ -192,15 +234,190 @@ class MainActivity : Activity() {
         webView.requestFocus()
     }
 
+    // ---------- Pointer mode ----------
+    //
+    // A CAPTCHA runs in a cross-origin frame that inject.js can't reach, and keyboard focus inside it is invisible.
+    // Pointer mode draws a pointer above the WebView instead: the arrows move it and OK taps where it points, as a
+    // real touch event, so every choice is still made by the person holding the remote. It turns on by itself on
+    // Facebook's login and check pages and while a CAPTCHA frame is on screen, and with POINTER_TOGGLE_KEY anywhere.
+
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var pointerView: PointerView
+    private lateinit var pointerBanner: TextView
+    private var pointerOn = false
+    private var pointerX = -1f
+    private var pointerY = -1f
+    /** Turned on with the toggle key: stays on until Back or the toggle key, whatever the page. */
+    private var pointerManual = false
+    /** The page wants pointer mode, from the last check. */
+    private var pointerWanted = false
+    /** Turned off by hand on a page that wants it: stays off until the page stops wanting it. */
+    private var pointerDeclined = false
+
+    private val pointerCheck = object : Runnable {
+        override fun run() {
+            checkPointerWanted()
+            handler.postDelayed(this, POINTER_CHECK_MS)
+        }
+    }
+
+    private fun addPointerViews() {
+        val content = findViewById<FrameLayout>(android.R.id.content)
+        val density = resources.displayMetrics.density
+        pointerBanner = TextView(this).apply {
+            text = getString(R.string.pointer_banner)
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            val pad = (12 * density).toInt()
+            setPadding(2 * pad, pad, 2 * pad, pad)
+            background = GradientDrawable().apply {
+                setColor(0xE6202020.toInt())
+                cornerRadius = 12 * density
+            }
+            isFocusable = false
+            visibility = View.GONE
+        }
+        content.addView(pointerBanner, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            // Top right: CAPTCHA boxes and Facebook's login form sit in the middle or on the left.
+            Gravity.TOP or Gravity.END
+        ).apply { topMargin = (16 * density).toInt(); marginEnd = (16 * density).toInt() })
+        // Added last, so it is drawn above the banner too.
+        pointerView = PointerView(this).apply { visibility = View.GONE }
+        content.addView(pointerView, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    /** Asks the page whether a CAPTCHA frame is on screen (and tells it whether pointer mode is on). */
+    private fun checkPointerWanted() {
+        if (webViewDestroyed) return
+        val onCheckPage = isLoginOrCheckPage(webView.url)
+        webView.evaluateJavascript("window.__fbtv ? window.__fbtv.pointer($pointerOn) : false") { result ->
+            if (webViewDestroyed) return@evaluateJavascript
+            val wanted = onCheckPage || result == "true"
+            if (wanted != pointerWanted && isDebug) {
+                // Host and path only: Facebook's login URLs carry tokens in the query.
+                val page = webView.url?.let(Uri::parse)?.let { "${it.host}${it.path}" }
+                Log.i(TAG, "Pointer wanted: $wanted ($page)")
+            }
+            pointerWanted = wanted
+            if (!wanted) {
+                pointerDeclined = false
+                if (pointerOn && !pointerManual) setPointerMode(false)
+            } else if (!pointerOn && !pointerDeclined) {
+                setPointerMode(true)
+            }
+        }
+    }
+
+    private fun isLoginOrCheckPage(url: String?): Boolean {
+        val uri = url?.let(Uri::parse) ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        if (host != "facebook.com" && !host.endsWith(".facebook.com")) return false
+        return LOGIN_PATH.containsMatchIn(uri.path ?: "")
+    }
+
+    private fun setPointerMode(on: Boolean, manual: Boolean = false) {
+        pointerOn = on
+        pointerManual = on && manual
+        if (on) pointerDeclined = false
+        if (on && pointerX < 0) {
+            pointerX = webView.width / 2f
+            pointerY = webView.height / 2f
+        }
+        placePointer()
+        pointerView.visibility = if (on) View.VISIBLE else View.GONE
+        pointerBanner.visibility = if (on) View.VISIBLE else View.GONE
+        if (!webViewDestroyed) webView.evaluateJavascript("window.__fbtv && window.__fbtv.pointer($on)", null)
+        if (isDebug) Log.i(TAG, "Pointer mode ${if (on) "on" else "off"}${if (manual) " (toggle key)" else ""}")
+    }
+
+    /** Back or the toggle key: off, and it stays off on this page even if the page wants it. */
+    private fun leavePointerMode() {
+        setPointerMode(false)
+        pointerDeclined = pointerWanted
+    }
+
+    private fun handlePointerKey(event: KeyEvent): Boolean {
+        val (dx, dy) = when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> -1 to 0
+            KeyEvent.KEYCODE_DPAD_RIGHT -> 1 to 0
+            KeyEvent.KEYCODE_DPAD_UP -> 0 to -1
+            KeyEvent.KEYCODE_DPAD_DOWN -> 0 to 1
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled && !webViewDestroyed) tapAtPointer()
+                return true
+            }
+            else -> return false
+        }
+        if (event.action == KeyEvent.ACTION_DOWN && !webViewDestroyed) movePointer(dx, dy, event.repeatCount)
+        return true
+    }
+
+    /** Moves the pointer, faster the longer a key is held. Pushed past the top or bottom edge, it scrolls instead. */
+    private fun movePointer(dx: Int, dy: Int, repeatCount: Int) {
+        val step = (POINTER_STEP_PX + repeatCount * POINTER_ACCEL_PX).coerceAtMost(POINTER_MAX_STEP_PX)
+        val maxX = webView.width - 1f
+        val maxY = webView.height - 1f
+        if ((dy < 0 && pointerY <= 0f) || (dy > 0 && pointerY >= maxY)) {
+            scrollAtPointer(dy)
+            return
+        }
+        pointerX = (pointerX + dx * step).coerceIn(0f, maxX)
+        pointerY = (pointerY + dy * step).coerceIn(0f, maxY)
+        placePointer()
+    }
+
+    private fun placePointer() {
+        pointerView.translationX = pointerX - PointerView.TIP_OFFSET
+        pointerView.translationY = pointerY - PointerView.TIP_OFFSET
+    }
+
+    /** A tap at the pointer, as a touch on the WebView: it reaches cross-origin frames like any real touch. */
+    private fun tapAtPointer() {
+        val downTime = SystemClock.uptimeMillis()
+        val x = pointerX - webView.left
+        val y = pointerY - webView.top
+        sendTouch(MotionEvent.ACTION_DOWN, downTime, downTime, x, y)
+        handler.postDelayed({ sendTouch(MotionEvent.ACTION_UP, downTime, SystemClock.uptimeMillis(), x, y) }, TAP_MS)
+    }
+
+    private fun sendTouch(action: Int, downTime: Long, eventTime: Long, x: Float, y: Float) {
+        if (webViewDestroyed) return
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y; pressure = 1f; size = 1f })
+        val event = MotionEvent.obtain(downTime, eventTime, action, 1, properties, coords, 0, 0, 1f, 1f, 0, 0,
+            InputDevice.SOURCE_TOUCHSCREEN, 0)
+        webView.dispatchTouchEvent(event)
+        event.recycle()
+    }
+
+    /** One mouse-wheel notch at the pointer: scrolls whatever is under it (the page, a dialog, a frame). */
+    private fun scrollAtPointer(direction: Int) {
+        val now = SystemClock.uptimeMillis()
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply {
+            x = pointerX - webView.left
+            y = pointerY - webView.top
+            setAxisValue(MotionEvent.AXIS_VSCROLL, -direction.toFloat())
+        })
+        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, properties, coords, 0, 0, 1f, 1f, 0, 0,
+            InputDevice.SOURCE_MOUSE, 0)
+        webView.dispatchGenericMotionEvent(event)
+        event.recycle()
+    }
+
     override fun onResume() {
         super.onResume()
         if (!webViewDestroyed) {
             webView.onResume()
             webView.resumeTimers()
         }
+        handler.post(pointerCheck)
     }
 
     override fun onPause() {
+        handler.removeCallbacks(pointerCheck)
         if (!webViewDestroyed) {
             webView.onPause()
             webView.pauseTimers()
@@ -334,6 +551,7 @@ class MainActivity : Activity() {
         private const val TAG = "FacebookFeed"
         private const val DESKTOP_HOST = "www.facebook.com"
         private const val HOME_URL = "https://$DESKTOP_HOST/"
+        private const val EXTRA_URL = "url"
         private val PHONE_SITE_HOSTS = setOf("m.facebook.com", "mobile.facebook.com", "touch.facebook.com", "mbasic.facebook.com")
 
         /** Page zoom in percent: 125 lays the page out 768 CSS px wide on a 1080p TV (100 = 960). Tune this on the TV. */
@@ -343,6 +561,20 @@ class MainActivity : Activity() {
         private const val REELS_CAPTION_SCALE_PERCENT = 70
 
         private const val CACHE_LIMIT_BYTES = 50L * 1024 * 1024
+
+        /**
+         * Pointer mode on/off anywhere. 5: the digits other than 0 are unused in the app, the TV only acts on them
+         * when an app doesn't, and 5 is the middle of the keypad, easy to find without looking.
+         */
+        private const val POINTER_TOGGLE_KEY = KeyEvent.KEYCODE_5
+        /** Facebook's login and check pages, where pointer mode turns on by itself. */
+        private val LOGIN_PATH = Regex("""^/(login|checkpoint|recover|two_step_verification|two_factor)([/.]|$)""")
+        private const val POINTER_CHECK_MS = 1000L
+        /** Pointer speed in screen px: one press moves POINTER_STEP_PX; held, each repeat adds POINTER_ACCEL_PX. */
+        private const val POINTER_STEP_PX = 30f
+        private const val POINTER_ACCEL_PX = 6f
+        private const val POINTER_MAX_STEP_PX = 90f
+        private const val TAP_MS = 60L
 
         /**
          * Extra remote keys (TCL RC833), handled only inside this app, mapped to window.__fbtv.command() names.

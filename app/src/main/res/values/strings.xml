@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Family Feed</string>
+    <string name="pointer_banner">Pointer mode\nArrows move · OK clicks · Back or 5: off</string>
 </resources>

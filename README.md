@@ -55,6 +55,23 @@ The arrows move the focus ring to the nearest button or link in that direction, 
 comments (Blue, or OK on Comment) scrolls to the first comment. CH ∨ / CH ∧ scroll the comments (hold for
 continuous scrolling). Back leaves a text box first, then closes the comments or menu.
 
+### Login pages and CAPTCHAs (pointer mode)
+
+On Facebook's login and security-check pages, and whenever a CAPTCHA ("I'm not a robot", image puzzles) is on
+screen, a pointer appears with a "Pointer mode" note in the top-right corner. CAPTCHAs run in a separate frame the
+focus ring can't reach, so a pointer is used instead.
+
+| Key | Action |
+|---|---|
+| Arrows | Move the pointer (hold to move faster); at the top or bottom edge, scroll |
+| OK | Click where the pointer is (on a text box: opens the TV keyboard) |
+| Back | Pointer off; it stays off on that page |
+| 5 | Pointer on or off, on any page |
+
+While a CAPTCHA is shown the page is zoomed out a little, so the whole puzzle and its Verify button fit on screen.
+The pointer turns itself off when Facebook moves on. Every choice is made with the remote; nothing is solved
+automatically.
+
 ### Shortcut keys
 
 | Key | Action |
@@ -65,6 +82,7 @@ continuous scrolling). Back leaves a text box first, then closes the comments or
 | Blue | Open the comments of the current post or Reel |
 | Menu (≡) | Jump to the top bar |
 | 0 | Reload the page, if Facebook gets stuck |
+| 5 | Pointer mode on / off (see above) |
 | Play/Pause, Rewind, Fast-forward | Control the current video, on remotes that have these keys |
 
 Leaving the app, with Back from the top bar or with the Home button, closes it completely and frees its memory;
@@ -73,7 +91,10 @@ the login is kept.
 ## Debug vs release builds
 
 - `./gradlew assembleDebug` builds `com.avinash.facebookfeed.debug`, labelled "Family Feed (debug)", signed with
-  the local debug key. It installs next to the release app, with its own login.
+  the local debug key. It installs next to the release app, with its own login. It can open any https page, for
+  testing pages Facebook shows only sometimes:
+  `adb shell am start -n com.avinash.facebookfeed.debug/com.avinash.facebookfeed.MainActivity --es url https://www.google.com/recaptcha/api2/demo`
+  (release builds ignore the `url` extra).
 - `./gradlew assembleRelease` builds `com.avinash.facebookfeed`. It is signed only when `KEYSTORE_PATH`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` are set in the environment; otherwise the APK is unsigned.
   No keystore or password is ever stored in the repository.

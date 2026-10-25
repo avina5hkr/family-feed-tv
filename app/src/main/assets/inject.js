@@ -19,6 +19,10 @@
   var DEBUG = __DEBUG__;  // true in debug builds: log the detected mode on every key
   // Reels only: size of the account name and caption block over the video (1 = Facebook's size).
   var REELS_CAPTION_SCALE = __REELS_CAPTION_SCALE_PERCENT__ / 100;
+  // Page zoom while a CAPTCHA is shown: at ZOOM a 4x4 reCAPTCHA is taller than the screen, and its box floats over
+  // the page, so scrolling can't bring its Verify button into view.
+  var CAPTCHA_ZOOM = 0.8;
+  var captchaZoom = false;
   var SCROLL_STEP = 350;
   var SEEK_SECONDS = 10;
   var FOCUS_ATTR = 'data-fbtv-focus';
@@ -33,8 +37,9 @@
   // Page zoom. WebView.setInitialScale is ignored when a page pins its own scale, so we write the viewport
   // meta ourselves: a layout width of screen.width / ZOOM shown at a fixed scale, like browser zoom.
   function applyZoom() {
-    var content = 'width=' + Math.round(screen.width / ZOOM) + ',initial-scale=' + ZOOM +
-        ',minimum-scale=' + ZOOM + ',maximum-scale=' + ZOOM + ',user-scalable=no';
+    var zoom = captchaZoom ? CAPTCHA_ZOOM : ZOOM;
+    var content = 'width=' + Math.round(screen.width / zoom) + ',initial-scale=' + zoom +
+        ',minimum-scale=' + zoom + ',maximum-scale=' + zoom + ',user-scalable=no';
     var metas = document.querySelectorAll('meta[name="viewport"]');
     if (metas.length === 0) {
       var meta = document.createElement('meta');
@@ -73,6 +78,7 @@
     if (!banner) return 0;
     var items = banner.querySelectorAll(CLICKABLE);
     for (var i = 0; i < items.length; i++) {
+      if (items[i].closest('[role=dialog]')) continue;  // a menu opened from the top bar
       var r = rectOf(items[i]);
       if (r.height > 0 && r.top >= -1 && r.bottom < innerHeight / 3) bottom = Math.max(bottom, r.bottom);
     }
@@ -191,7 +197,8 @@
 
   function headerTargets() {
     var banner = document.querySelector('[role=banner]');
-    return banner ? clickables(banner, 24) : [];
+    // Menus opened from the top bar (the profile menu with Log out...) are drawn inside it, but aren't part of it.
+    return banner ? clickables(banner, 24).filter(function (t) { return !t.closest('[role=dialog]'); }) : [];
   }
 
   /** The main photo or video of a post. */
@@ -615,7 +622,7 @@
    */
   function revealElement(el, smooth) {
     var r = rectOf(el), scroller = scrollerOf(el);
-    if (el.closest('[role=banner]')) return;
+    if (el.closest('[role=banner]') && !el.closest('[role=dialog]')) return;  // the fixed top bar itself
     var top = scroller ? rectOf(scroller).top : headerBottom(), bottom = scroller ? rectOf(scroller).bottom : innerHeight;
     var post = !scroller && postOf(el), dy;
     if (post) {
@@ -1087,7 +1094,7 @@
   }
 
   window.addEventListener('keyup', function (e) {
-    if (e.key !== 'Enter' || !okDown) return;
+    if (pointerMode || e.key !== 'Enter' || !okDown) return;
     okDown = false;
     clearTimeout(okTimer);
     var m = mode();
@@ -1102,7 +1109,7 @@
 
   window.addEventListener('keydown', function (e) {
     var dir = DIRS[e.key];
-    if (!dir && e.key !== 'Enter') return;
+    if (pointerMode || (!dir && e.key !== 'Enter')) return;
     // While typing, arrows and Enter belong to the text field.
     if (document.activeElement && isEditable(document.activeElement) && document.activeElement === focused) return;
 
@@ -1235,6 +1242,7 @@
 
   function refresh() {
     updateReelCaptions();
+    if (pointerMode) return;
     if (location.pathname !== lastPath) {
       note('path ' + lastPath + ' -> ' + location.pathname + ' restoring=' + restoring);
       var wasReels = /^\/reels?\//.test(lastPath);
@@ -1259,6 +1267,50 @@
     if (!focusValid() || !onScreen(focused)) recoverFocus();
   }
 
+  // ---------- Pointer mode (drawn and driven by Kotlin) ----------
+
+  // While Kotlin's pointer is on screen the arrows and OK never reach the page; the ring is hidden and left alone.
+  var pointerMode = false;
+
+  /** A CAPTCHA frame (reCAPTCHA or similar) is shown. It is cross-origin, so the ring can't go inside it. */
+  function captchaShown() {
+    var frames = document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i];
+      if (!/captcha/i.test(f.src || '')) continue;
+      var r = f.getBoundingClientRect();
+      // reCAPTCHA parks its closed challenge frame far off-screen.
+      if (r.width < 20 || r.height < 20 || r.bottom < -2000 || r.right < -2000) continue;
+      if (f.checkVisibility && !f.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+      return true;
+    }
+    return false;
+  }
+
+  /** Kotlin, every second and on every change: whether pointer mode is on. Returns whether a CAPTCHA is shown. */
+  function pointer(on) {
+    if (on !== pointerMode) {
+      pointerMode = on;
+      note('pointer mode ' + on);
+      if (on) {
+        clearTimeout(okTimer);
+        okDown = false;
+        if (focused) focused.removeAttribute(FOCUS_ATTR);
+        focused = null;
+      } else {
+        lastRect = null;
+        recoverFocus();
+      }
+    }
+    var shown = captchaShown();
+    if (shown !== captchaZoom) {
+      captchaZoom = shown;
+      note('captcha zoom ' + shown);
+      applyZoom();
+    }
+    return shown;
+  }
+
   /** For remote debugging (chrome://inspect): why is the focus where it is? */
   function debugState() {
     return {
@@ -1269,7 +1321,7 @@
     };
   }
 
-  window.__fbtv = { applyZoom: applyZoom, refresh: refresh, back: back, command: command, debug: debugState, log: log,
+  window.__fbtv = { applyZoom: applyZoom, refresh: refresh, back: back, command: command, pointer: pointer, debug: debugState, log: log,
     internals: { targets: targets, actionRow: actionRow, commentTargets: commentTargets, reelNavButtons: reelNavButtons, reelActions: reelActions, reelVideo: reelVideo, nearest: nearest, headerTargets: headerTargets, posts: posts, isFirstPost: isFirstPost, focused: function () { return focused; } } };
 
   applyZoom();
