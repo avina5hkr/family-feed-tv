@@ -175,14 +175,19 @@
     return best;
   }
 
-  /** The reel's Like/Comment/Share column, just right of the video. */
+  /**
+   * The reel's Like/Comment/Share column: the column of buttons nearest to the right of the video. (On landscape
+   * reels Facebook's previous/next column is close by too; it must not count.)
+   */
   function reelActions(video) {
     if (!video) return [];
     var vr = rectOf(video);
-    return clickables(document.body, 32).filter(function (b) {
+    var near = clickables(document.body, 32).filter(function (b) {
       var r = rectOf(b);
       return r.left >= vr.right - 16 && r.left <= vr.right + 120 && r.top > vr.top - 16 && r.bottom < vr.bottom + 80;
     });
+    var minLeft = Math.min.apply(null, near.map(function (b) { return rectOf(b).left; }));
+    return near.filter(function (b) { return rectOf(b).left <= minLeft + 10; });
   }
 
   /**
@@ -190,12 +195,13 @@
    * column counts; the Like/Comment/Share column can also sit far right on landscape reels.
    */
   function reelNavButtons() {
-    var banner = document.querySelector('[role=banner]'), video = reelVideo();
+    var banner = document.querySelector('[role=banner]'), video = reelVideo(), top = headerBottom() + 4;
     var actions = new Set(reelActions(video));
     // Not clickables(): on the first reel "previous" is aria-disabled, and both buttons are needed to tell them apart.
     var bs = Array.prototype.filter.call(document.querySelectorAll('[role=button]'), function (b) {
       var r = rectOf(b);
-      return r.width >= 36 && r.width < 80 && r.height >= 36 && r.top >= 0 && r.bottom <= innerHeight &&
+      // (Below the top bar: its right-hand buttons aren't all inside [role=banner].)
+      return r.width >= 36 && r.width < 80 && r.height >= 36 && r.top >= top && r.bottom <= innerHeight &&
           r.left < innerWidth && !actions.has(b) && !(banner && banner.contains(b)) &&
           (!video || r.left >= rectOf(video).right);
     });
@@ -205,18 +211,93 @@
     return bs.length === 2 ? { prev: bs[0], next: bs[1] } : null;
   }
 
+  var pendingReel = null;
   function changeReel(dir) {
+    if (restoring) {
+      // Still sliding to the last one: Facebook mishandles clicks mid-animation, so do this one right after.
+      pendingReel = dir;
+      return;
+    }
+    var nav = reelNavButtons(), video = reelVideo();
+    if (nav) {
+      (dir === 'down' ? nav.next : nav.prev).click();
+    } else if (video) {
+      // Fallback: Facebook's reel viewer also listens for the arrow keys on its own container.
+      video.dispatchEvent(new KeyboardEvent('keydown', {
+        key: dir === 'down' ? 'ArrowDown' : 'ArrowUp', keyCode: dir === 'down' ? 40 : 38, bubbles: true
+      }));
+    }
+    restoreReelSlot(video);
+  }
+
+  // Which control is selected in the reel viewer, so the same one stays selected on the next reel
+  // (e.g. keep pressing OK on Facebook's on-screen "next" arrow, or stay on Like).
+  var reelSlot = { kind: 'video' };
+
+  /**
+   * Opening Reels keeps this TV busy for several seconds, which delays the timer that selects the first reel.
+   * A key press in the meantime selects it straight away.
+   */
+  function finishEntryRestore() {
+    if (!restoring || !restoringEntry || !reelVideo()) return;
+    clearInterval(restoreTimer);
+    restoring = false;
+    setFocus(slotElement(reelSlot), false);
+  }
+
+  function slotOf(el) {
+    if (!el) return null;
+    if (el.tagName === 'VIDEO') return { kind: 'video' };
     var nav = reelNavButtons();
-    if (nav) (dir === 'down' ? nav.next : nav.prev).click();
-    setTimeout(function () { var v = reelVideo(); if (v) setFocus(v, false); }, 900);
+    if (nav && el === nav.prev) return { kind: 'prev' };
+    if (nav && el === nav.next) return { kind: 'next' };
+    var index = reelActions(reelVideo()).indexOf(el);
+    return index >= 0 ? { kind: 'action', index: index } : null;
+  }
+
+  function slotElement(slot) {
+    var v = reelVideo();
+    if (!slot || slot.kind === 'video') return v;
+    if (slot.kind === 'prev' || slot.kind === 'next') {
+      var nav = reelNavButtons();
+      return nav ? nav[slot.kind] : v;
+    }
+    var actions = reelActions(v);
+    return actions[slot.index] || v;
+  }
+
+  /** After a reel change, put the ring back on the same control once the new reel is on screen. */
+  var restoreTimer = 0, restoring = false, restoringEntry = false;
+  function restoreReelSlot(oldVideo) {
+    var slot = reelSlot, started = Date.now();
+    restoringEntry = !oldVideo;
+    note('restore start slot=' + JSON.stringify(slot) + ' old=' + describe(oldVideo));
+    clearInterval(restoreTimer);
+    restoring = true;
+    restoreTimer = setInterval(function () {
+      var v = reelVideo(), waited = Date.now() - started;
+      if (!isReels() || waited > 3000 || (v && v !== oldVideo && onScreen(v) && waited > 300)) {
+        note('restore end after ' + waited + 'ms reels=' + isReels() + ' video=' + describe(v));
+        clearInterval(restoreTimer);
+        restoring = false;
+        var el = isReels() ? slotElement(slot) : null;
+        if (el) { setFocus(el, false); reelSlot = slot; } else recoverFocus();
+        if (pendingReel && isReels()) {
+          var next = pendingReel;
+          pendingReel = null;
+          setTimeout(function () { changeReel(next); }, 100);
+        }
+      }
+    }, 150);
   }
 
   function targets() {
     var dialog = topDialog();
     if (dialog) return clickables(dialog, 12);
     if (isReels()) {
-      var v = reelVideo();
-      return headerTargets().concat(v ? [v] : [], reelActions(v));
+      var v = reelVideo(), nav = reelNavButtons();
+      var arrows = nav ? [nav.prev, nav.next].filter(function (b) { return b.getAttribute('aria-disabled') !== 'true'; }) : [];
+      return headerTargets().concat(v ? [v] : [], reelActions(v), arrows);
     }
     var ps = posts();
     if (ps.length === 0) return clickables(document.body, 12);
@@ -241,7 +322,19 @@
     return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
   }
 
+  // Last focus changes with their cause, for remote debugging: __fbtv.log in chrome://inspect.
+  var log = [];
+  function note(msg) {
+    log.push(new Date().toTimeString().slice(3, 8) + ' ' + location.pathname.slice(0, 14) + ' ' + msg);
+    if (log.length > 40) log.shift();
+  }
+
+  function describe(el) {
+    return el ? el.tagName + ' ' + (el.getAttribute('aria-label') || '').slice(0, 20) : 'none';
+  }
+
   function setFocus(el, reveal) {
+    note('focus ' + describe(el) + ' <- ' + (new Error().stack.split('\n')[2] || '').trim().split(' ')[1]);
     if (focused && focused !== el) focused.removeAttribute(FOCUS_ATTR);
     focused = el;
     el.setAttribute(FOCUS_ATTR, '');
@@ -254,6 +347,7 @@
     }
     if (reveal) revealElement(el, reveal === 'smooth');
     lastRect = rectOf(el);
+    if (isReels() && !topDialog()) reelSlot = slotOf(el) || reelSlot;
   }
 
   /** The ring's element still exists, is laid out, and is inside the open dialog if there is one. */
@@ -452,6 +546,84 @@
     v.currentTime = Math.max(0, Math.min(v.duration - 0.5, v.currentTime + seconds));
   }
 
+  /**
+   * Channel -/+ (and Page Down/Up): next/previous reel in Reels; elsewhere scroll about one screen and select the
+   * first thing now visible.
+   */
+  function page(dir) {
+    if (theaterVideo || fullscreenVideo()) return;
+    var dialog = topDialog();
+    if (isReels() && !dialog) { changeReel(dir); return; }
+    var scroller = focused && dialog && dialog.contains(focused) ? scrollerOf(focused) : null;
+    var height = scroller ? scroller.clientHeight : innerHeight - headerBottom();
+    scrollByY(scroller, (dir === 'down' ? 1 : -1) * Math.round(height * 0.85), true);
+    setTimeout(function () {
+      var header = new Set(headerTargets());
+      var visible = targets().filter(function (t) { return !header.has(t) && onScreen(t); });
+      var first = edgeTarget(visible, true);
+      if (first) setFocus(first, false);
+    }, 600);
+  }
+
+  /** The top-bar tab whose link goes to a path matching the test (Home: "/", Reels: "/reel/..."). */
+  function tab(test) {
+    return headerTargets().filter(function (h) {
+      return h.tagName === 'A' && h.href && test(new URL(h.href, location.href).pathname);
+    })[0];
+  }
+
+  function goTo(test, fallbackUrl) {
+    var t = tab(test);
+    if (t) t.click(); else location.href = fallbackUrl;
+  }
+
+  /** The post (feed) or reel the user is looking at: Like is its first action, Comment the second. */
+  function currentActions() {
+    if (isReels() && !topDialog()) return reelActions(reelVideo());
+    var post = postOf(focused);
+    if (!post || !onScreen(post)) {
+      var ps = Array.prototype.filter.call(posts(), function (p) { return usable(p, 1) && onScreen(p); });
+      post = ps[0];
+    }
+    return post ? actionRow(post) : [];
+  }
+
+  function pressAction(index) {
+    var button = currentActions()[index];
+    if (!button) return;
+    setFocus(button, 'smooth');
+    button.click();
+    setTimeout(function () { if (!focusValid()) recoverFocus(); }, 700);
+  }
+
+  /** Colour keys, Menu and Channel/Page keys from the remote (see REMOTE_COMMANDS in MainActivity). */
+  function command(name) {
+    if (theaterVideo && name !== 'toggle' && name !== 'play' && name !== 'pause' &&
+        name !== 'rewind' && name !== 'forward') {
+      exitTheater();
+    }
+    if (name === 'pageDown') page('down');
+    else if (name === 'pageUp') page('up');
+    else if (name === 'home') {
+      if (location.pathname === '/' && !topDialog()) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        lastRect = null;
+        quietUntil = Date.now() + 1000;
+        setTimeout(recoverFocus, 700);
+      } else {
+        goTo(function (p) { return p === '/'; }, '/');
+      }
+    } else if (name === 'reels') {
+      if (!isReels()) goTo(function (p) { return /^\/reels?\//.test(p); }, '/reel/');
+    } else if (name === 'like') pressAction(0);
+    else if (name === 'comment') pressAction(1);
+    else if (name === 'topBar') {
+      var header = headerTargets();
+      var current = header.filter(function (h) { return h.getAttribute('aria-current') === 'page'; })[0];
+      if (current || header[0]) setFocus(current || header[0], false);
+    } else media(name);
+  }
+
   function media(action) {
     var v = currentVideo();
     if (action === 'toggle') togglePlay(v);
@@ -498,6 +670,14 @@
       return;
     }
     if (isEditable(el)) { el.focus(); el.click(); return; }
+    var slot = isReels() && !topDialog() ? slotOf(el) : null;
+    if (slot && (slot.kind === 'prev' || slot.kind === 'next')) {
+      // Facebook's own on-screen arrow: stay on it for the next reel.
+      var oldVideo = reelVideo();
+      el.click();
+      restoreReelSlot(oldVideo);
+      return;
+    }
     el.click();
     // Opening something (comments, a menu, a photo) usually replaces what was focused.
     setTimeout(function () { if (!focusValid()) recoverFocus(); }, 700);
@@ -510,6 +690,8 @@
     if (!dir && e.key !== 'Enter') return;
     // While typing, arrows and Enter belong to the text field.
     if (document.activeElement && isEditable(document.activeElement) && document.activeElement === focused) return;
+
+    if (isReels()) finishEntryRestore();
 
     var fsVideo = theaterVideo || fullscreenVideo();
     if (fsVideo) {
@@ -579,9 +761,14 @@
       return 'handled';
     }
     if (isReels()) return 'reels';
-    if (location.pathname === '/' && window.scrollY > innerHeight) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      setTimeout(function () { var h = headerTargets().filter(function (t) { return rectOf(t).width > 60; }); if (h[0]) setFocus(h[0], false); }, 600);
+    // In the feed, Back first goes to the top bar (scrolling to the top); only Back on the top bar leaves the app.
+    var header = headerTargets();
+    if (location.pathname === '/' && header.indexOf(focused) < 0) {
+      if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
+      var home = header.filter(function (h) { return h.getAttribute('aria-current') === 'page'; })[0] ||
+          header.filter(function (t) { return rectOf(t).width > 60; })[0];
+      if (home) setFocus(home, false);
+      quietUntil = Date.now() + 1000;
       return 'handled';
     }
     return 'none';
@@ -591,13 +778,26 @@
 
   function refresh() {
     if (location.pathname !== lastPath) {
-      // Facebook navigated without a page load (new tab, next reel...): start from the new page's default.
+      note('path ' + lastPath + ' -> ' + location.pathname + ' restoring=' + restoring);
+      var wasReels = /^\/reels?\//.test(lastPath);
       lastPath = location.pathname;
       lastRect = null;
-      setTimeout(function () { if (!theaterVideo && !topDialog()) recoverFocus(); }, 600);
+      if (isReels() && wasReels) {
+        // Next/previous reel (also when Facebook's own arrow was clicked with OK): keep the same control selected.
+        if (!restoring) restoreReelSlot(null);
+      } else {
+        if (isReels()) {
+          // Just opened Reels: select the video as soon as the first reel is on screen.
+          reelSlot = { kind: 'video' };
+          restoreReelSlot(null);
+        } else {
+          // Facebook navigated without a page load (new tab...): start from the new page's default.
+          setTimeout(function () { if (!theaterVideo && !topDialog()) recoverFocus(); }, 600);
+        }
+      }
       return;
     }
-    if (Date.now() < quietUntil || theaterVideo || document.fullscreenElement) return;
+    if (Date.now() < quietUntil || restoring || theaterVideo || document.fullscreenElement) return;
     if (!focusValid() || !onScreen(focused)) recoverFocus();
   }
 
@@ -611,7 +811,7 @@
     };
   }
 
-  window.__fbtv = { applyZoom: applyZoom, refresh: refresh, back: back, media: media, debug: debugState,
+  window.__fbtv = { applyZoom: applyZoom, refresh: refresh, back: back, command: command, debug: debugState, log: log,
     internals: { targets: targets, reelNavButtons: reelNavButtons, reelActions: reelActions, reelVideo: reelVideo, nearest: nearest, headerTargets: headerTargets, posts: posts, isFirstPost: isFirstPost, focused: function () { return focused; } } };
 
   applyZoom();
@@ -621,5 +821,6 @@
   });
   // Facebook re-renders constantly; a cheap periodic check keeps the ring from vanishing.
   setInterval(function () { if (!document.hidden) refresh(); }, 1000);
-  setTimeout(refresh, 800);
+  if (isReels()) restoreReelSlot(null);  // select the first reel's video once it is on screen
+  else setTimeout(refresh, 800);
 })();

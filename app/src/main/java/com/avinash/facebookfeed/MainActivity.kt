@@ -121,10 +121,15 @@ class MainActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) handleBack()
             return true
         }
-        val mediaAction = MEDIA_KEYS[event.keyCode]
-        if (mediaAction != null) {
+        if (event.keyCode == KeyEvent.KEYCODE_0) {
+            // 0: reload the page, in case Facebook gets stuck.
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !webViewDestroyed) webView.reload()
+            return true
+        }
+        val command = REMOTE_COMMANDS[event.keyCode]
+        if (command != null) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !webViewDestroyed) {
-                webView.evaluateJavascript("window.__fbtv && window.__fbtv.media('$mediaAction')", null)
+                webView.evaluateJavascript("window.__fbtv && window.__fbtv.command('$command')", null)
             }
             return true
         }
@@ -297,8 +302,21 @@ class MainActivity : Activity() {
 
         private const val CACHE_LIMIT_BYTES = 50L * 1024 * 1024
 
-        /** Remote media keys, if the remote has them, mapped to window.__fbtv.media() actions. */
-        private val MEDIA_KEYS = mapOf(
+        /**
+         * Extra remote keys (TCL RC833), handled only inside this app, mapped to window.__fbtv.command() names.
+         * Channel -/+ (and Page Down/Up): scroll a screen down/up, or next/previous reel in Reels.
+         * Red: Home feed, Green: Reels, Yellow: Like, Blue: Comments, Menu: top bar.
+         */
+        private val REMOTE_COMMANDS = mapOf(
+            KeyEvent.KEYCODE_CHANNEL_DOWN to "pageDown",
+            KeyEvent.KEYCODE_CHANNEL_UP to "pageUp",
+            KeyEvent.KEYCODE_PAGE_DOWN to "pageDown",
+            KeyEvent.KEYCODE_PAGE_UP to "pageUp",
+            KeyEvent.KEYCODE_PROG_RED to "home",
+            KeyEvent.KEYCODE_PROG_GREEN to "reels",
+            KeyEvent.KEYCODE_PROG_YELLOW to "like",
+            KeyEvent.KEYCODE_PROG_BLUE to "comment",
+            KeyEvent.KEYCODE_MENU to "topBar",
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE to "toggle",
             KeyEvent.KEYCODE_MEDIA_PLAY to "play",
             KeyEvent.KEYCODE_MEDIA_PAUSE to "pause",
