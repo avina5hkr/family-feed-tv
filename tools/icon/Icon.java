@@ -6,7 +6,7 @@ import java.nio.file.*;
 import javax.imageio.ImageIO;
 
 /**
- * Facebook Feed launcher icon and TV banner: a thick white TV outline on deep navy, with an amber play triangle and
+ * Family Feed launcher icon and TV banner: a thick white TV outline on deep navy, with an amber play triangle and
  * two white feed lines on the screen. Built to be read from across a room: high contrast, big shapes, nothing thin.
  *
  * All geometry is in the 108x108 adaptive-icon viewport and stays inside the 66-unit safe circle, so whatever mask
@@ -153,7 +153,7 @@ public class Icon {
         g.setTransform(saved);
         int textX = 122, maxWidth = 320 - textX - 14;
         Font font = new Font("Helvetica", Font.BOLD, 60);
-        for (int size = 60; g.getFontMetrics(font).stringWidth("Facebook") > maxWidth; size--) {
+        for (int size = 60; g.getFontMetrics(font).stringWidth("Family") > maxWidth; size--) {
             font = new Font("Helvetica", Font.BOLD, size);
         }
         g.setFont(font);
@@ -161,7 +161,7 @@ public class Icon {
         FontMetrics fm = g.getFontMetrics();
         int lineHeight = Math.round(fm.getAscent() * 1.12f);
         int firstBaseline = 90 - lineHeight / 2 + fm.getAscent() / 2 - 2;
-        g.drawString("Facebook", textX, firstBaseline);
+        g.drawString("Family", textX, firstBaseline);
         g.drawString("Feed", textX, firstBaseline + lineHeight);
         g.dispose();
         ImageIO.write(banner, "png", res.resolve("drawable-xhdpi/banner.png").toFile());

@@ -1,4 +1,4 @@
-# Facebook Feed
+# Family Feed
 
 An Android TV app for my mom that opens Facebook's website (www.facebook.com, desktop layout) in a full-screen WebView, so she can browse the feed and watch videos and Reels using only the TV remote.
 
@@ -7,7 +7,7 @@ An Android TV app for my mom that opens Facebook's website (www.facebook.com, de
 - Login is kept across restarts and reboots.
 - Builds are signed and published as GitHub Releases.
 
-Tested on a TCL 55C6K (Google TV, Android 14). Install with `adb install -r facebook-feed.apk`, or download the APK from the Releases page.
+Tested on a TCL 55C6K (Google TV, Android 14). Install with `adb install -r family-feed.apk`, or download the APK from the Releases page.
 
 Not affiliated with Facebook or Meta.
 
@@ -72,7 +72,7 @@ the login is kept.
 
 ## Debug vs release builds
 
-- `./gradlew assembleDebug` builds `com.avinash.facebookfeed.debug`, labelled "Facebook Feed (debug)", signed with
+- `./gradlew assembleDebug` builds `com.avinash.facebookfeed.debug`, labelled "Family Feed (debug)", signed with
   the local debug key. It installs next to the release app, with its own login.
 - `./gradlew assembleRelease` builds `com.avinash.facebookfeed`. It is signed only when `KEYSTORE_PATH`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` are set in the environment; otherwise the APK is unsigned.
@@ -86,8 +86,8 @@ environment's secrets `ANDROID_SIGNING_KEY_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
 `ANDROID_KEY_PASSWORD` and the variable `ANDROID_SIGNING_CERT_SHA256`.
 
 - **Release:** push a tag like `v1.0.0` on a commit that is on `main`. CI builds and signs the APK, checks its
-  certificate fingerprint and package, and publishes a GitHub Release with `facebook-feed.apk` and
-  `facebook-feed.apk.sha256`. The version code is `MAJOR*10000 + MINOR*100 + PATCH`.
+  certificate fingerprint and package, and publishes a GitHub Release with `family-feed.apk` and
+  `family-feed.apk.sha256`. The version code is `MAJOR*10000 + MINOR*100 + PATCH`.
 - **Dry run:** `gh workflow run release.yml --ref main`. It builds and signs exactly like a release and uploads the
   APK as a workflow artifact (kept for 1 day), but creates no tag and no release.
 
