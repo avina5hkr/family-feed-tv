@@ -4,6 +4,9 @@ import android.app.Activity
 import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
@@ -153,7 +156,7 @@ class MainActivity : Activity() {
             return
         }
         if (webViewDestroyed) {
-            finish()
+            exitApp()
             return
         }
         webView.evaluateJavascript("window.__fbtv ? window.__fbtv.back() : 'none'") { result ->
@@ -171,7 +174,7 @@ class MainActivity : Activity() {
         val history = webView.copyBackForwardList()
         var index = history.currentIndex - 1
         while (index >= 0 && skip(history.getItemAtIndex(index).url)) index--
-        if (index >= 0) webView.goBackOrForward(index - history.currentIndex) else finish()
+        if (index >= 0) webView.goBackOrForward(index - history.currentIndex) else exitApp()
     }
 
     private fun isReelUrl(url: String): Boolean =
@@ -203,15 +206,38 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    /** Home pressed, or another app opened on top. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        exitApp()
+    }
+
     override fun onStop() {
         CookieManager.getInstance().flush()
-        trimCacheIfNeeded()
         super.onStop()
+        // Any other way off the screen (TV standby, input switch...): close entirely too.
+        if (!isChangingConfigurations) exitApp()
+    }
+
+    /** Leaving the app always closes it entirely: no task in Recents, nothing kept in memory. */
+    private fun exitApp() {
+        if (!isFinishing) finishAndRemoveTask()
     }
 
     override fun onDestroy() {
+        val exiting = isFinishing && !isChangingConfigurations
+        if (exiting && !webViewDestroyed) {
+            // Free the disk cache; cookies and localStorage (the login) stay.
+            webView.clearCache(true)
+            CookieManager.getInstance().flush()
+        }
         destroyWebView()
         super.onDestroy()
+        if (exiting) {
+            // End the process so all of its RAM, and the WebView renderer bound to it, is released. The short
+            // delay lets the WebView finish writing localStorage to disk.
+            Handler(Looper.getMainLooper()).postDelayed({ Process.killProcess(Process.myPid()) }, 500)
+        }
     }
 
     private fun destroyWebView() {
