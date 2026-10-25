@@ -87,9 +87,50 @@
 
   /** At least a real part of it (24px, or half of a small element) is visible, and not hidden under the top bar. */
   function onScreen(el) {
-    var r = rectOf(el), top = el.closest('[role=banner]') ? 0 : headerBottom();
-    var visible = Math.min(r.bottom, innerHeight) - Math.max(r.top, top);
+    var r = rectOf(el), top = el.closest('[role=banner]') ? 0 : headerBottom(), bottom = innerHeight;
+    // Inside a dialog's scrolling area (comments), only the part shown in that area counts.
+    var area = panelScroller();
+    if (area && area.contains(el)) {
+      var ar = rectOf(area);
+      top = Math.max(top, ar.top);
+      bottom = Math.min(bottom, ar.bottom);
+    }
+    var visible = Math.min(r.bottom, bottom) - Math.max(r.top, top);
     return r.width > 0 && r.right > 0 && r.left < innerWidth && visible >= Math.min(24, r.height / 2);
+  }
+
+  /**
+   * The main scrolling area of the open dialog or reel comments panel (where the post and its comments scroll;
+   * the title bar and the comment box stay put). Cached briefly: finding it walks the whole dialog.
+   */
+  var scrollerCache = { panel: null, el: null, at: 0 };
+  function panelScroller() {
+    var panel = topDialog() || reelComments();
+    if (!panel) return null;
+    var cached = scrollerCache.el;
+    // Facebook replaces the scrolling element when content arrives, so a cached one must still be in the panel.
+    if (scrollerCache.panel === panel && Date.now() - scrollerCache.at < 1000 &&
+        (!cached || (cached.isConnected && panel.contains(cached)))) return cached;
+    var best = null, bestH = 0, all = panel.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var e = all[i];
+      if (e.scrollHeight > e.clientHeight + 4 && e.clientHeight > bestH && /(auto|scroll)/.test(getComputedStyle(e).overflowY)) {
+        best = e;
+        bestH = e.clientHeight;
+      }
+    }
+    scrollerCache = { panel: panel, el: best, at: Date.now() };
+    return best;
+  }
+
+  /** First thing visible in the dialog's scrolling area, or else the first visible thing on the page. */
+  function firstVisibleTarget() {
+    var header = new Set(headerTargets()), area = panelScroller();
+    var visible = targets().filter(function (t) { return !header.has(t) && onScreen(t); });
+    var inArea = area ? visible.filter(function (t) { return area.contains(t); }) : [];
+    // In comments, land on a name or text link, never on a comment's small Like button (one OK would like it).
+    var named = inArea.filter(function (t) { return t.tagName === 'A' && (t.innerText || '').trim(); });
+    return edgeTarget(named.length ? named : inArea.length ? inArea : visible, true);
   }
 
   /** All clickable elements in scope; nested clickables covering the same area count once (outermost wins). */
@@ -180,7 +221,44 @@
     for (var i = 0; i < more.length; i++) if (usable(more[i], 1)) out.push(more[i]);
     var row = actionRow(post);
     if (!media && row.length === 0) return clickables(post, 24);  // friend suggestions, reel trays...
-    return out.concat(row);
+    return out.concat(row, commentTargets(post, row));
+  }
+
+  /** Comments of a post: Facebook's [role=article] elements nested inside the post's own. */
+  function commentArticles(scope) {
+    return Array.prototype.filter.call(scope.querySelectorAll('[role=article]'), function (a) {
+      var outer = a.parentElement && a.parentElement.closest('[role=article]');
+      return !!outer && scope.contains(outer) && usable(a, 1);
+    });
+  }
+
+  /**
+   * What sits under a post's Like/Comment/Share row once its comments are shown in the feed: the comment box, one
+   * stop per comment (the author's name), and text buttons such as "View more comments". The composer's small
+   * icon buttons (emoji, sticker...) and each comment's tiny Like/Reply links are left out.
+   */
+  function commentTargets(post, row) {
+    if (row.length === 0) return [];
+    var rowBottom = Math.max.apply(null, row.map(function (b) { return rectOf(b).bottom; }));
+    var out = [], comments = commentArticles(post);
+    var box = Array.prototype.filter.call(post.querySelectorAll('[contenteditable=true]'), function (e) {
+      return rectOf(e).top >= rowBottom - 2 && usable(e, 1);
+    })[0];
+    if (box) out.push(box);
+    comments.forEach(function (c) {
+      var author = Array.prototype.filter.call(c.querySelectorAll('a[href]'), function (a) {
+        return (a.innerText || '').trim() && usable(a, 1);
+      })[0];
+      if (author) out.push(author);
+    });
+    Array.prototype.forEach.call(post.querySelectorAll('[role=button]'), function (b) {
+      var r = rectOf(b);
+      if (r.top < rowBottom - 2 || !(b.innerText || '').trim() || r.height < 14 || !usable(b, 1)) return;
+      if (comments.some(function (c) { return c.contains(b); })) return;
+      if (box && r.top < rectOf(box).bottom + 48 && r.top > rectOf(box).top - 48) return;  // composer toolbar
+      out.push(b);
+    });
+    return out;
   }
 
   function reelVideo() {
@@ -392,7 +470,11 @@
 
   /** Put the ring on the most sensible element: the one nearest to where the old one was, or a default. */
   function recoverFocus() {
-    var ts = targets().filter(onScreen);
+    var header = new Set(headerTargets());
+    var all = targets().filter(onScreen);
+    // The top bar only when nothing in the page itself is on screen.
+    var ts = all.filter(function (t) { return !header.has(t); });
+    if (ts.length === 0) ts = all;
     if (ts.length === 0) return false;
     var best = ts[0];
     if (inReelViewer()) {
@@ -404,9 +486,8 @@
         if (d < bestD) { bestD = d; best = t; }
       });
     } else {
-      // Skip the top bar: start on the topmost thing in the page itself.
-      var header = new Set(headerTargets());
-      best = edgeTarget(ts.filter(function (t) { return !header.has(t); }), true) || best;
+      // Start on the topmost thing in the page itself.
+      best = edgeTarget(ts, true) || best;
     }
     setFocus(best, false);
     return true;
@@ -586,14 +667,11 @@
   function page(dir) {
     if (theaterVideo || fullscreenVideo()) return;
     if (inReelViewer()) { changeReel(dir); return; }
-    var dialog = topDialog() || reelComments();
-    var scroller = focused && dialog && dialog.contains(focused) ? scrollerOf(focused) : null;
+    var scroller = panelScroller();
     var height = scroller ? scroller.clientHeight : innerHeight - headerBottom();
     scrollByY(scroller, (dir === 'down' ? 1 : -1) * Math.round(height * 0.85), true);
     setTimeout(function () {
-      var header = new Set(headerTargets());
-      var visible = targets().filter(function (t) { return !header.has(t) && onScreen(t); });
-      var first = edgeTarget(visible, true);
+      var first = firstVisibleTarget();
       if (first) setFocus(first, false);
     }, 600);
   }
@@ -626,7 +704,60 @@
     if (!button) return;
     setFocus(button, 'smooth');
     button.click();
+    if (index === 1) showComments(postOf(button));
     setTimeout(function () { if (!focusValid()) recoverFocus(); }, 700);
+  }
+
+  /**
+   * After opening a post's comments: the post's photo/video usually fills the dialog's small scrolling area, so
+   * the comments (already loaded below it) can't be seen, only the comment box. Wait for them, scroll the first
+   * comment to the top of the area and select it. Comments are the [role=article] nested inside the post's.
+   */
+  var commentsTimer = 0;
+  function showComments(post) {
+    var started = Date.now();
+    clearIntervalOwn(commentsTimer);
+    var timer = commentsTimer = setIntervalOwn(function () {
+      if (timer !== commentsTimer || Date.now() - started > 20000) { clearIntervalOwn(timer); return; }
+      var dialog = topDialog();
+      if (!dialog) {
+        // Posts with few comments show them right under the post in the feed instead of in a dialog.
+        if (post && post.isConnected && Date.now() - started > 1200) {
+          var inline = commentArticles(post)[0];
+          var row = actionRow(post);
+          var target = inline ? commentTargets(post, row).filter(function (t) { return inline.contains(t); })[0]
+              : commentTargets(post, row)[0];
+          if (target) {
+            clearIntervalOwn(timer);
+            setFocus(target, 'smooth');
+          }
+        }
+        return;
+      }
+      var first = commentArticles(dialog)[0];
+      scrollerCache.at = 0;  // always look the scrolling area up afresh here
+      var area = panelScroller();
+      if (!first || !area || !area.contains(first)) return;
+      var ar = rectOf(area), fr = rectOf(first);
+      if (fr.top < ar.top || fr.top > ar.bottom - 24) {
+        // Not in view yet: scroll and check again on the next tick (Facebook may re-render and undo it).
+        area.scrollTop += fr.top - ar.top - 8;
+        quietUntil = Date.now() + 800;
+        return;
+      }
+      clearIntervalOwn(timer);
+      var author = Array.prototype.filter.call(first.querySelectorAll('a[href]'), function (a) {
+        return (a.innerText || '').trim() && usable(a, 1);
+      })[0] || clickables(first, 12)[0];
+      quietUntil = Date.now() + 800;
+      if (author) setFocus(author, false);
+    }, 300);
+  }
+
+  /** The 2nd button of a feed post's Like / Comment / Share row. */
+  function isCommentButton(el) {
+    var post = postOf(el);
+    return !!post && actionRow(post)[1] === el;
   }
 
   /** Colour keys, Menu and Channel/Page keys from the remote (see REMOTE_COMMANDS in MainActivity). */
@@ -638,16 +769,14 @@
     var now = Date.now();
     holdUntil = now + 300;
     if (holdDir === dir) return;
-    var dialog = topDialog() || reelComments();
-    holdScroller = focused && dialog && dialog.contains(focused) ? scrollerOf(focused) : null;
+    holdScroller = panelScroller();
     holdDir = dir;
     holdStarted = now;
     var last = performance.now();
     function frame(t) {
       if (Date.now() > holdUntil || holdDir !== dir) {
         holdDir = 0;
-        var header = new Set(headerTargets());
-        var first = edgeTarget(targets().filter(function (x) { return !header.has(x) && onScreen(x); }), true);
+        var first = firstVisibleTarget();
         if (first) setFocus(first, false);
         return;
       }
@@ -743,7 +872,9 @@
       restoreReelSlot(oldVideo);
       return;
     }
+    var openingComments = isCommentButton(el);
     el.click();
+    if (openingComments) showComments(postOf(el));
     // Opening something (comments, a menu, a photo) usually replaces what was focused.
     setTimeout(function () { if (!focusValid()) recoverFocus(); }, 700);
   }
@@ -890,7 +1021,7 @@
   }
 
   window.__fbtv = { applyZoom: applyZoom, refresh: refresh, back: back, command: command, debug: debugState, log: log,
-    internals: { targets: targets, reelNavButtons: reelNavButtons, reelActions: reelActions, reelVideo: reelVideo, nearest: nearest, headerTargets: headerTargets, posts: posts, isFirstPost: isFirstPost, focused: function () { return focused; } } };
+    internals: { targets: targets, actionRow: actionRow, commentTargets: commentTargets, reelNavButtons: reelNavButtons, reelActions: reelActions, reelVideo: reelVideo, nearest: nearest, headerTargets: headerTargets, posts: posts, isFirstPost: isFirstPost, focused: function () { return focused; } } };
 
   applyZoom();
   // Facebook may rewrite the viewport meta on its own; put ours back.
