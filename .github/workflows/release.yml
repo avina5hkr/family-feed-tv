@@ -88,7 +88,7 @@ jobs:
             if out=$(gh api "repos/${REPO}/releases/tags/${REF_NAME}" 2>&1); then
               echo "::error::A GitHub Release already exists for $REF_NAME."
               exit 1
-            elif ! printf '%s' "$out" | grep -q 'HTTP 404'; then
+            elif ! grep -q 'HTTP 404' <<<"$out"; then
               echo "::error::Could not check for an existing release: $out"
               exit 1
             fi
@@ -187,8 +187,9 @@ jobs:
         run: |
           set -euo pipefail
           build_tools=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)
-          badging=$("$ANDROID_HOME/build-tools/$build_tools/aapt2" dump badging \
-            app/build/outputs/apk/release/app-release.apk | grep -m 1 '^package:')
+          # Capture everything first: grep -m 1 in a pipe would kill aapt2 with SIGPIPE and fail under pipefail.
+          all=$("$ANDROID_HOME/build-tools/$build_tools/aapt2" dump badging app/build/outputs/apk/release/app-release.apk)
+          badging=$(awk '/^package:/ && !found { print; found = 1 }' <<<"$all")
           echo "$badging"
           name=$(printf '%s' "$badging" | sed -n "s/.* name='\([^']*\)'.*/\1/p")
           code=$(printf '%s' "$badging" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")
