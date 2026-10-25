@@ -1,11 +1,11 @@
 # Facebook Feed
 
-An Android TV app for my mom that opens Facebook's mobile site (m.facebook.com) in a full-screen WebView, so she can browse the feed and watch videos and Reels using only the TV remote.
+An Android TV app for my mom that opens Facebook's website (www.facebook.com, desktop layout) in a full-screen WebView, so she can browse the feed and watch videos and Reels using only the TV remote.
 
 - D-pad moves a visible focus ring between posts and buttons, and OK clicks.
 - Back closes fullscreen video, then goes back in history.
 - Login is kept across restarts and reboots.
-- Builds are signed and published as GitHub Releases, and the app checks for new releases and asks before installing.
+- Builds are signed and published as GitHub Releases.
 
 Tested on a TCL 55C6K (Google TV, Android 14). Install with `adb install -r facebook-feed.apk`, or download the APK from the Releases page.
 
