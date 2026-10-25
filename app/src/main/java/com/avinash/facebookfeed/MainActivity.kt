@@ -219,9 +219,12 @@ class MainActivity : Activity() {
         if (!isChangingConfigurations) exitApp()
     }
 
-    /** Leaving the app always closes it entirely: no task in Recents, nothing kept in memory. */
+    /**
+     * Leaving the app always closes it entirely: nothing is kept in memory. It stays listed in Recents; picking it
+     * there starts it fresh.
+     */
     private fun exitApp() {
-        if (!isFinishing) finishAndRemoveTask()
+        if (!isFinishing) finish()
     }
 
     override fun onDestroy() {
