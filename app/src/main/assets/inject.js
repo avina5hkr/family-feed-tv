@@ -117,6 +117,20 @@
 
   function isReels() { return /^\/reels?\//.test(location.pathname); }
 
+  /** Comments of a reel (Blue / Comment): Facebook shows them in a panel under the shrunken reel. */
+  function reelComments() {
+    if (!isReels()) return null;
+    var cs = document.querySelectorAll('[role=complementary]');
+    for (var i = 0; i < cs.length; i++) {
+      var r = rectOf(cs[i]);
+      if (r.width > 100 && r.height > 50 && r.top < innerHeight && r.bottom > 0) return cs[i];
+    }
+    return null;
+  }
+
+  /** The reel viewer proper: reels page with no dialog or comments panel on top. */
+  function inReelViewer() { return isReels() && !topDialog() && !reelComments(); }
+
   function posts() { return document.querySelectorAll('[aria-posinset]'); }
 
   function postOf(el) { return el && el.closest ? el.closest('[aria-posinset]') : null; }
@@ -294,6 +308,7 @@
   function targets() {
     var dialog = topDialog();
     if (dialog) return clickables(dialog, 12);
+    if (isReels() && reelComments()) return clickables(document.body, 12);
     if (isReels()) {
       var v = reelVideo(), nav = reelNavButtons();
       var arrows = nav ? [nav.prev, nav.next].filter(function (b) { return b.getAttribute('aria-disabled') !== 'true'; }) : [];
@@ -347,7 +362,7 @@
     }
     if (reveal) revealElement(el, reveal === 'smooth');
     lastRect = rectOf(el);
-    if (isReels() && !topDialog()) reelSlot = slotOf(el) || reelSlot;
+    if (inReelViewer()) reelSlot = slotOf(el) || reelSlot;
   }
 
   /** The ring's element still exists, is laid out, and is inside the open dialog if there is one. */
@@ -362,7 +377,7 @@
     var ts = targets().filter(onScreen);
     if (ts.length === 0) return false;
     var best = ts[0];
-    if (isReels() && !topDialog()) {
+    if (inReelViewer()) {
       best = reelVideo() || best;
     } else if (lastRect && !topDialog()) {
       var cy = lastRect.top + lastRect.height / 2, bestD = Infinity;
@@ -383,7 +398,7 @@
 
   /** The scrolling box inside an open dialog (comments, menus); outside dialogs the page itself scrolls. */
   function scrollerOf(el) {
-    var dialog = topDialog();
+    var dialog = topDialog() || reelComments();
     if (!dialog || !dialog.contains(el)) return null;
     for (var p = el.parentElement; p && dialog.contains(p); p = p.parentElement) {
       var cs = getComputedStyle(p);
@@ -552,8 +567,8 @@
    */
   function page(dir) {
     if (theaterVideo || fullscreenVideo()) return;
-    var dialog = topDialog();
-    if (isReels() && !dialog) { changeReel(dir); return; }
+    if (inReelViewer()) { changeReel(dir); return; }
+    var dialog = topDialog() || reelComments();
     var scroller = focused && dialog && dialog.contains(focused) ? scrollerOf(focused) : null;
     var height = scroller ? scroller.clientHeight : innerHeight - headerBottom();
     scrollByY(scroller, (dir === 'down' ? 1 : -1) * Math.round(height * 0.85), true);
@@ -601,11 +616,11 @@
   // while they keep coming; stop shortly after the last one, so a lost key-up can't scroll forever.
   var holdDir = 0, holdUntil = 0, holdStarted = 0, holdScroller = null;
   function hold(dir) {
-    if (theaterVideo || fullscreenVideo() || (isReels() && !topDialog())) return;
+    if (theaterVideo || fullscreenVideo() || inReelViewer()) return;
     var now = Date.now();
     holdUntil = now + 300;
     if (holdDir === dir) return;
-    var dialog = topDialog();
+    var dialog = topDialog() || reelComments();
     holdScroller = focused && dialog && dialog.contains(focused) ? scrollerOf(focused) : null;
     holdDir = dir;
     holdStarted = now;
@@ -702,7 +717,7 @@
       return;
     }
     if (isEditable(el)) { el.focus(); el.click(); return; }
-    var slot = isReels() && !topDialog() ? slotOf(el) : null;
+    var slot = inReelViewer() ? slotOf(el) : null;
     if (slot && (slot.kind === 'prev' || slot.kind === 'next')) {
       // Facebook's own on-screen arrow: stay on it for the next reel.
       var oldVideo = reelVideo();
@@ -746,7 +761,7 @@
 
     var smooth = !e.repeat;
     var video = focused.tagName === 'VIDEO' ? focused : null;
-    var inReels = isReels() && !topDialog();
+    var inReels = inReelViewer();
 
     if (e.key === 'Enter') {
       activate(focused);
@@ -790,6 +805,13 @@
         }
         recoverFocus();
       }, 400);
+      return 'handled';
+    }
+    if (reelComments()) {
+      var toggle = reelActions(reelVideo())[1];
+      if (toggle) toggle.click();
+      else document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+      setTimeout(function () { var v = reelVideo(); if (v) setFocus(v, false); }, 600);
       return 'handled';
     }
     if (isReels()) return 'reels';
