@@ -128,8 +128,15 @@ class MainActivity : Activity() {
         }
         val command = REMOTE_COMMANDS[event.keyCode]
         if (command != null) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !webViewDestroyed) {
-                webView.evaluateJavascript("window.__fbtv && window.__fbtv.command('$command')", null)
+            if (event.action == KeyEvent.ACTION_DOWN && !webViewDestroyed) {
+                // Held Channel/Page keys repeat: keep scrolling for as long as the repeats come.
+                val name = when {
+                    event.repeatCount == 0 -> command
+                    command == "pageDown" -> "holdDown"
+                    command == "pageUp" -> "holdUp"
+                    else -> null
+                }
+                if (name != null) webView.evaluateJavascript("window.__fbtv && window.__fbtv.command('$name')", null)
             }
             return true
         }
@@ -304,7 +311,8 @@ class MainActivity : Activity() {
 
         /**
          * Extra remote keys (TCL RC833), handled only inside this app, mapped to window.__fbtv.command() names.
-         * Channel -/+ (and Page Down/Up): scroll a screen down/up, or next/previous reel in Reels.
+         * Channel -/+ (and Page Down/Up): scroll a screen down/up, or next/previous reel in Reels; held down,
+         * they scroll continuously.
          * Red: Home feed, Green: Reels, Yellow: Like, Blue: Comments, Menu: top bar.
          */
         private val REMOTE_COMMANDS = mapOf(

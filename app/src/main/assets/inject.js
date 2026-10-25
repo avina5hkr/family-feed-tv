@@ -597,13 +597,45 @@
   }
 
   /** Colour keys, Menu and Channel/Page keys from the remote (see REMOTE_COMMANDS in MainActivity). */
+  // Channel +/- held down: Kotlin sends holdDown/holdUp for every key repeat (about 20 a second). Scroll smoothly
+  // while they keep coming; stop shortly after the last one, so a lost key-up can't scroll forever.
+  var holdDir = 0, holdUntil = 0, holdStarted = 0, holdScroller = null;
+  function hold(dir) {
+    if (theaterVideo || fullscreenVideo() || (isReels() && !topDialog())) return;
+    var now = Date.now();
+    holdUntil = now + 300;
+    if (holdDir === dir) return;
+    var dialog = topDialog();
+    holdScroller = focused && dialog && dialog.contains(focused) ? scrollerOf(focused) : null;
+    holdDir = dir;
+    holdStarted = now;
+    var last = performance.now();
+    function frame(t) {
+      if (Date.now() > holdUntil || holdDir !== dir) {
+        holdDir = 0;
+        var header = new Set(headerTargets());
+        var first = edgeTarget(targets().filter(function (x) { return !header.has(x) && onScreen(x); }), true);
+        if (first) setFocus(first, false);
+        return;
+      }
+      var speed = Date.now() - holdStarted > 2000 ? 1400 : 700;  // CSS px per second, faster after 2 s
+      quietUntil = Date.now() + 500;
+      scrollByY(holdScroller, dir * speed * Math.min(t - last, 120) / 1000, false);  // even speed on slow frames
+      last = t;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
   function command(name) {
     if (theaterVideo && name !== 'toggle' && name !== 'play' && name !== 'pause' &&
-        name !== 'rewind' && name !== 'forward') {
+        name !== 'rewind' && name !== 'forward' && name !== 'holdDown' && name !== 'holdUp') {
       exitTheater();
     }
     if (name === 'pageDown') page('down');
     else if (name === 'pageUp') page('up');
+    else if (name === 'holdDown') hold(1);
+    else if (name === 'holdUp') hold(-1);
     else if (name === 'home') {
       if (location.pathname === '/' && !topDialog()) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
