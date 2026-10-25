@@ -58,10 +58,13 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
         webView = findViewById(R.id.webview)
         addPointerViews()
+        addUpdateBanner()
+        Updater.listener = updateListener
         configureWebView()
         logWebViewVersion()
         trimCacheIfNeeded()
 
+        debugUpdateApi(intent)
         webView.loadUrl(debugUrl(intent) ?: HOME_URL)
         webView.requestFocus()
     }
@@ -69,7 +72,19 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        debugUpdateApi(intent)
         debugUrl(intent)?.let { if (!webViewDestroyed) webView.loadUrl(it) }
+    }
+
+    /**
+     * Debug builds only: `--es update_api http://127.0.0.1:8000/latest.json` makes key 9 use that release JSON
+     * (GitHub's format) instead of GitHub, to test updating with a fake release served over `adb reverse`.
+     */
+    private fun debugUpdateApi(intent: Intent?) {
+        if (!BuildConfig.DEBUG) return
+        val api = intent?.getStringExtra(EXTRA_UPDATE_API) ?: return
+        Updater.apiOverride = api
+        Log.i(TAG, "Updates from $api")
     }
 
     /**
@@ -164,6 +179,10 @@ class MainActivity : Activity() {
             return true
         }
         if (pointerOn && handlePointerKey(event)) return true
+        if (event.keyCode == UPDATE_KEY) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) Updater.start(this)
+            return true
+        }
         if (event.keyCode == KeyEvent.KEYCODE_0) {
             // 0: reload the page, in case Facebook gets stuck.
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !webViewDestroyed) webView.reload()
@@ -197,6 +216,10 @@ class MainActivity : Activity() {
         }
         if (webViewDestroyed) {
             exitApp()
+            return
+        }
+        if (updateBanner.visibility == View.VISIBLE) {
+            hideUpdateBanner()  // a download keeps going
             return
         }
         if (pointerOn) {
@@ -286,6 +309,47 @@ class MainActivity : Activity() {
         pointerView = PointerView(this).apply { visibility = View.GONE }
         content.addView(pointerView, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    // ---------- Key 9: update from GitHub Releases (see Updater) ----------
+
+    private lateinit var updateBanner: TextView
+    private val hideUpdateBannerLater = Runnable { hideUpdateBanner() }
+
+    private val updateListener = object : Updater.Listener {
+        override fun onUpdateStatus(message: String, done: Boolean) {
+            if (isFinishing) return
+            handler.removeCallbacks(hideUpdateBannerLater)
+            updateBanner.text = message
+            updateBanner.visibility = View.VISIBLE
+            if (done) handler.postDelayed(hideUpdateBannerLater, UPDATE_MESSAGE_MS)
+        }
+    }
+
+    private fun addUpdateBanner() {
+        val density = resources.displayMetrics.density
+        updateBanner = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            gravity = Gravity.CENTER
+            val pad = (14 * density).toInt()
+            setPadding(2 * pad, pad, 2 * pad, pad)
+            background = GradientDrawable().apply {
+                setColor(0xF0202020.toInt())
+                cornerRadius = 14 * density
+            }
+            isFocusable = false
+            visibility = View.GONE
+        }
+        findViewById<FrameLayout>(android.R.id.content).addView(updateBanner, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        ).apply { topMargin = (72 * density).toInt() })
+    }
+
+    private fun hideUpdateBanner() {
+        handler.removeCallbacks(hideUpdateBannerLater)
+        updateBanner.visibility = View.GONE
     }
 
     /** Asks the page whether a CAPTCHA frame is on screen (and tells it whether pointer mode is on). */
@@ -414,6 +478,7 @@ class MainActivity : Activity() {
             webView.resumeTimers()
         }
         handler.post(pointerCheck)
+        Updater.awaitingUserAction = false
     }
 
     override fun onPause() {
@@ -428,14 +493,15 @@ class MainActivity : Activity() {
     /** Home pressed, or another app opened on top. */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        exitApp()
+        if (!Updater.awaitingUserAction) exitApp()
     }
 
     override fun onStop() {
         CookieManager.getInstance().flush()
         super.onStop()
-        // Any other way off the screen (TV standby, input switch...): close entirely too.
-        if (!isChangingConfigurations) exitApp()
+        // Any other way off the screen (TV standby, input switch...): close entirely too. Except while Android's
+        // "Update this app?" screen is on top: Cancel there should come back to the app.
+        if (!isChangingConfigurations && !Updater.awaitingUserAction) exitApp()
     }
 
     /**
@@ -448,6 +514,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (Updater.listener === updateListener) Updater.listener = null
         val exiting = isFinishing && !isChangingConfigurations
         if (exiting && !webViewDestroyed) {
             // Free the disk cache; cookies and localStorage (the login) stay.
@@ -552,6 +619,7 @@ class MainActivity : Activity() {
         private const val DESKTOP_HOST = "www.facebook.com"
         private const val HOME_URL = "https://$DESKTOP_HOST/"
         private const val EXTRA_URL = "url"
+        private const val EXTRA_UPDATE_API = "update_api"
         private val PHONE_SITE_HOSTS = setOf("m.facebook.com", "mobile.facebook.com", "touch.facebook.com", "mbasic.facebook.com")
 
         /**
@@ -570,6 +638,10 @@ class MainActivity : Activity() {
          * when an app doesn't, and 5 is the middle of the keypad, easy to find without looking.
          */
         private const val POINTER_TOGGLE_KEY = KeyEvent.KEYCODE_5
+        /** Check for an update and install it. Only ever on request: she presses 9 when asked to. */
+        private const val UPDATE_KEY = KeyEvent.KEYCODE_9
+        /** How long "up to date" or a failure stays on screen. */
+        private const val UPDATE_MESSAGE_MS = 8000L
         /** Facebook's login and check pages, where pointer mode turns on by itself. */
         private val LOGIN_PATH = Regex("""^/(login|checkpoint|recover|two_step_verification|two_factor)([/.]|$)""")
         private const val POINTER_CHECK_MS = 1000L

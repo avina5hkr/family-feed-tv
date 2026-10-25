@@ -29,6 +29,9 @@ android {
         versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Key 9 looks for updates in this repository's GitHub Releases.
+        buildConfigField("String", "UPDATE_REPO", "\"avina5hkr/family-feed-tv\"")
     }
 
     signingConfigs {

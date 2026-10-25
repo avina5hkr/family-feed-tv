@@ -17,6 +17,8 @@ Two apps on the TV:
 - If a release install fails (signature mismatch, downgrade, anything), stop and tell me. Never fix it by
   uninstalling.
 - Read-only commands on it are fine: `dumpsys`, `meminfo`, `logcat`.
+- The release app can also update itself when a person presses 9 on the TV (key 9, see README). Never send key 9,
+  or anything else that starts an update, to the release app; that is my decision and my mother's action only.
 
 ## Debug app (`com.avinash.facebookfeed.debug`)
 
@@ -24,6 +26,13 @@ Two apps on the TV:
 - Avoid uninstalling it or clearing its data, because that erases its Facebook login. If you think it's needed,
   ask me first.
 - Login, logout and CAPTCHA tests happen only in the debug app.
+- Key 9 (the updater) is tested in the debug app, on the TV or in the emulator, against a fake release served from
+  the Mac (`update_api` extra, see README).
+
+## Emulator
+
+- `FamilyFeedTV` is a Google TV (Android 14, 1920x1080) emulator on the Mac, for testing when the TV is off.
+  When both are connected, address each device explicitly (`ANDROID_SERIAL=emulator-5554`).
 
 ## Check before every install, uninstall or clear
 

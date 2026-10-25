@@ -1,4 +1,12 @@
 <resources>
     <string name="app_name">Family Feed</string>
     <string name="pointer_banner">Pointer mode\nArrows move · OK clicks · Back or 5: off</string>
+    <!-- Key 9 (Updater): Hindi first, then English. -->
+    <string name="update_checking">अपडेट देख रहे हैं… · Checking for updates…</string>
+    <string name="update_none">Family Feed पहले से नया है (%1$s) · Family Feed is up to date (%1$s)</string>
+    <string name="update_downloading">नया वर्ज़न %1$s डाउनलोड हो रहा है… %2$d%% · Downloading version %1$s… %2$d%%</string>
+    <string name="update_installing">ऐप बंद होकर अपडेट होगा, फिर Family Feed दोबारा खोलें · The app will close and update; open Family Feed again afterwards</string>
+    <string name="update_permission">पहले अनुमति दें: Settings › Apps › Special app access › Install unknown apps › Family Feed · Allow it first in Settings</string>
+    <string name="update_cancelled">अपडेट रद्द किया गया · Update cancelled</string>
+    <string name="update_failed">अपडेट नहीं हो पाया · Update failed: %1$s</string>
 </resources>

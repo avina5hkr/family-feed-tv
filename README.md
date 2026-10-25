@@ -95,6 +95,7 @@ automatically.
 | Menu (≡) | Jump to the top bar |
 | 0 | Reload the page, if Facebook gets stuck |
 | 5 | Pointer mode on / off (see above) |
+| 9 | Check for an update and install it (see [Updating the app](#updating-the-app-key-9)) |
 | Play/Pause, Rewind, Fast-forward | Control the current video, on remotes that have these keys |
 
 Leaving the app, with Back from the top bar or with the Home button, closes it completely and frees its memory;
@@ -106,7 +107,9 @@ the login is kept.
   the local debug key. It installs next to the release app, with its own login. It can open any https page, for
   testing pages Facebook shows only sometimes:
   `adb shell am start -n com.avinash.facebookfeed.debug/com.avinash.facebookfeed.MainActivity --es url https://www.google.com/recaptcha/api2/demo`
-  (release builds ignore the `url` extra).
+  (release builds ignore the `url` extra). For testing key 9, `--es update_api http://127.0.0.1:8000/latest.json`
+  makes it read a release in GitHub's JSON format from a local server (reached with `adb reverse tcp:8000 tcp:8000`)
+  instead of GitHub.
 - `./gradlew assembleRelease` builds `com.avinash.facebookfeed`. It is signed only when `KEYSTORE_PATH`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` are set in the environment; otherwise the APK is unsigned.
   No keystore or password is ever stored in the repository.
@@ -125,6 +128,23 @@ environment's secrets `ANDROID_SIGNING_KEY_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
   APK as a workflow artifact (kept for 1 day), but creates no tag and no release.
 
 `scripts/check-cert.sh <apk> <sha256>` is the fingerprint check the workflow uses; it also works locally.
+
+## Updating the app (key 9)
+
+The app never updates by itself. Pressing **9** checks this repository's latest GitHub Release (drafts and
+prereleases never count) and, if it is newer, downloads `family-feed.apk`, checks it against
+`family-feed.apk.sha256`, checks that it is this app, newer, and signed with the same certificate as the installed
+app, and installs it. A banner shows each step in Hindi and English; anything that fails is shown and nothing is
+installed.
+
+- **Once:** Android asks to allow "Install unknown apps" for Family Feed. Pressing 9 opens that settings page; press
+  OK on Family Feed, then Back.
+- **First update after installing with adb:** Android shows "Do you want to update this app?". The focus starts on
+  Cancel: press Left onto **Update**, then OK.
+- **Later updates** install without that screen (the app is then its own installer).
+- The app closes to be replaced; open Family Feed again from the home screen. The login is kept.
+
+The first release with key 9 still has to be installed by hand (download from GitHub, check, `adb install -r`).
 
 ## Repository layout
 

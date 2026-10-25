@@ -61,7 +61,7 @@ rows = [130, 200, 270, 340]
 cols = [775, 850, 925]
 for i, d in enumerate('123456789'):
     cx, cy = cols[i % 3], rows[i // 3]
-    special = d == '5'
+    special = d in '59'
     circle(cx, cy, 26, accent=special, dim=not special)
     text(cx, cy, d, size=26, fill='#fff' if special else '#9aa0a8')
 circle(775, 340, 26, dim=True)
@@ -141,6 +141,8 @@ labels = [
      [(L, 800), (690, 760), (742, 745)]),
     ('L', 960, 'VOL  ·  TV volume', ['Unchanged'],
      [(L, 960), (735, 952)], True),
+    ('R', 175, '9  ·  Update the app', ['Only when you ask her to:', 'checks GitHub, then installs'],
+     [(R, 175), (1010, 270), (956, 270)]),
     ('R', 300, 'Menu ≡  ·  Top bar', ['Home, Reels, Friends…', 'and the profile menu'],
      [(R, 300), (1010, 340), (956, 340)]),
     ('R', 420, 'Blue  ·  Comments', ['Of the current post or Reel'],
