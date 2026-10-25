@@ -13,3 +13,22 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# IDE and build output
+.idea/
+.gradle/
+.kotlin/
+build/
+captures/
+
+# Built packages and signing material: never commit these
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+keystore.properties
+.env
+
+# Heap dumps
+*.hprof
