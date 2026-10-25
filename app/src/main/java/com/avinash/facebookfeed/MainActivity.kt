@@ -220,11 +220,12 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Leaving the app always closes it entirely: nothing is kept in memory. It stays listed in Recents; picking it
-     * there starts it fresh.
+     * Leaving the app always closes it entirely: nothing is kept in memory, and it is removed from Recents too (so
+     * Android drops the screenshot it keeps for the Recents thumbnail). This TV has no Recents screen anyway; the
+     * app is opened from the home screen's apps row.
      */
     private fun exitApp() {
-        if (!isFinishing) finish()
+        if (!isFinishing) finishAndRemoveTask()
     }
 
     override fun onDestroy() {
