@@ -195,18 +195,28 @@
   }
 
   /**
-   * The reel's Like/Comment/Share column: the column of buttons nearest to the right of the video. (On landscape
-   * reels Facebook's previous/next column is close by too; it must not count.)
+   * The reel's own Like / Comment / Share / Menu buttons, top to bottom. Found through the page structure: the
+   * smallest container around the video that holds them but no other video. Position alone isn't safe: with the
+   * comments open, Facebook scrolls the previous reel's buttons in right above this one's Like.
+   * Returns [] when the structure isn't recognised, so nothing gets pressed by mistake.
    */
   function reelActions(video) {
     if (!video) return [];
     var vr = rectOf(video);
-    var near = clickables(document.body, 32).filter(function (b) {
-      var r = rectOf(b);
-      return r.left >= vr.right - 16 && r.left <= vr.right + 120 && r.top > vr.top - 16 && r.bottom < vr.bottom + 80;
-    });
-    var minLeft = Math.min.apply(null, near.map(function (b) { return rectOf(b).left; }));
-    return near.filter(function (b) { return rectOf(b).left <= minLeft + 10; });
+    for (var a = video.parentElement; a && a !== document.body; a = a.parentElement) {
+      if (a.querySelectorAll('video').length > 1) return [];
+      var bs = Array.prototype.filter.call(a.querySelectorAll('[role=button]'), function (b) {
+        var r = rectOf(b);
+        return r.width >= 32 && r.width < 80 && r.height >= 32 && r.left >= vr.right - 16 && usable(b, 1);
+      });
+      if (bs.length >= 3) {
+        // Only the column nearest the video (not Facebook's previous/next arrows further right).
+        var minLeft = Math.min.apply(null, bs.map(function (b) { return rectOf(b).left; }));
+        return bs.filter(function (b) { return rectOf(b).left <= minLeft + 10; })
+            .sort(function (x, y) { return rectOf(x).top - rectOf(y).top; });
+      }
+    }
+    return [];
   }
 
   /**
@@ -790,6 +800,7 @@
 
   // ---------- Back (called from Kotlin) ----------
 
+  var lastCommentsClose = 0;
   function back() {
     if (theaterVideo) {
       exitTheater();
@@ -816,11 +827,16 @@
       return 'handled';
     }
     if (reelComments()) {
-      var toggle = reelActions(reelVideo())[1];
-      if (toggle) toggle.click();
-      else document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
-      setTimeout(function () { var v = reelVideo(); if (v) setFocus(v, false); }, 600);
-      return 'handled';
+      // Close the comments with the reel's own Comment button (2nd of Like, Comment, Share, Menu). If that
+      // didn't work (Back again within a few seconds, panel still open) or isn't safe, leave Reels instead.
+      var actions = reelActions(reelVideo());
+      if (actions.length >= 3 && Date.now() - lastCommentsClose > 3000) {
+        lastCommentsClose = Date.now();
+        actions[1].click();
+        setTimeout(function () { var v = reelVideo(); if (v) setFocus(v, false); }, 600);
+        return 'handled';
+      }
+      return 'reels';
     }
     if (isReels()) return 'reels';
     // In the feed, Back first goes to the top bar (scrolling to the top); only Back on the top bar leaves the app.
