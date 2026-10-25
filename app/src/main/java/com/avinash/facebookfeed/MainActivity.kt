@@ -61,7 +61,9 @@ class MainActivity : Activity() {
             allowContentAccess = false
             setSupportMultipleWindows(false)
             setGeolocationEnabled(false)
-            userAgentString = WebSettings.getDefaultUserAgent(this@MainActivity).replace("; wv", "")
+            // Lets the injected viewport meta set any page zoom, including below 100%.
+            useWideViewPort = true
+            userAgentString = desktopUserAgent(WebSettings.getDefaultUserAgent(this@MainActivity))
         }
 
         CookieManager.getInstance().apply {
@@ -71,6 +73,16 @@ class MainActivity : Activity() {
 
         webView.webViewClient = FeedWebViewClient()
         webView.webChromeClient = FeedChromeClient()
+    }
+
+    /**
+     * Facebook serves its phone site (stretched layout, "Open app" prompts) to any Android user agent,
+     * so present as desktop Chrome on Linux. The Chrome major version comes from the installed WebView.
+     */
+    private fun desktopUserAgent(defaultUserAgent: String): String {
+        val major = Regex("""Chrome/(\d+)""").find(defaultUserAgent)?.groupValues?.get(1)
+            ?: return defaultUserAgent.replace("; wv", "")
+        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36"
     }
 
     private fun logWebViewVersion() {
@@ -180,12 +192,24 @@ class MainActivity : Activity() {
 
         override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) = inject(view)
 
-        /** Keep http/https inside the WebView; silently drop app schemes such as intent:, fb: and market:. */
+        /**
+         * Keep http/https inside the WebView; silently drop app schemes such as intent:, fb: and market:.
+         * Links to the phone site (m.facebook.com and friends) are rewritten to www.facebook.com.
+         */
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val scheme = request.url.scheme?.lowercase()
-            val allowed = scheme in WEB_SCHEMES
-            if (!allowed && isDebug) Log.d(TAG, "Blocked navigation to ${request.url}")
-            return !allowed
+            val url = request.url
+            val scheme = url.scheme?.lowercase()
+            if (scheme !in WEB_SCHEMES) {
+                if (isDebug) Log.d(TAG, "Blocked navigation to $url")
+                return true
+            }
+            if (request.isForMainFrame && url.host?.lowercase() in PHONE_SITE_HOSTS) {
+                val desktopUrl = url.buildUpon().scheme("https").authority(DESKTOP_HOST).build().toString()
+                if (isDebug) Log.d(TAG, "Rewrote $url to $desktopUrl")
+                view.loadUrl(desktopUrl)
+                return true
+            }
+            return false
         }
 
         /** The renderer crashed or was killed for memory. Rebuild the Activity instead of letting the app crash. */
@@ -232,10 +256,12 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "FacebookFeed"
-        private const val HOME_URL = "https://m.facebook.com/"
+        private const val DESKTOP_HOST = "www.facebook.com"
+        private const val HOME_URL = "https://$DESKTOP_HOST/"
+        private val PHONE_SITE_HOSTS = setOf("m.facebook.com", "mobile.facebook.com", "touch.facebook.com", "mbasic.facebook.com")
 
-        /** Page zoom in percent. Tune this on the TV. */
-        private const val PAGE_ZOOM_PERCENT = 150
+        /** Page zoom in percent: 100 lays the page out 960 CSS px wide on a 1080p TV. Tune this on the TV. */
+        private const val PAGE_ZOOM_PERCENT = 100
 
         private const val CACHE_LIMIT_BYTES = 50L * 1024 * 1024
         private val WEB_SCHEMES = setOf("http", "https", "about", "data", "blob", "javascript")

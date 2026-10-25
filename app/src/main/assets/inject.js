@@ -3,8 +3,8 @@
 (function () {
   var ZOOM = __PAGE_ZOOM_PERCENT__ / 100;
 
-  // Page zoom. Facebook's viewport meta pins initial-scale=1, which makes WebView.setInitialScale a no-op,
-  // so we rewrite the meta instead: a narrower layout width shown at a fixed scale, like browser zoom.
+  // Page zoom. WebView.setInitialScale is ignored when a page pins its own scale, so we write the viewport
+  // meta ourselves: a layout width of screen.width / ZOOM shown at a fixed scale, like browser zoom.
   function applyZoom() {
     var content = 'width=' + Math.round(screen.width / ZOOM) + ',initial-scale=' + ZOOM +
         ',minimum-scale=' + ZOOM + ',maximum-scale=' + ZOOM + ',user-scalable=no';
