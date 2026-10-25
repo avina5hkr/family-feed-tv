@@ -11,6 +11,65 @@ Tested on a TCL 55C6K (Google TV, Android 14). Install with `adb install -r face
 
 Not affiliated with Facebook or Meta.
 
+## Remote controls
+
+All keys are handled inside the app only; no system-wide remote settings are changed.
+
+### Feed
+
+| Key | Action |
+|---|---|
+| Up / Down | Move through the parts of a post (photo or video, "See more", Like / Comment / Share, comments when shown), then on to the next post. Above the first post: the "What's on your mind" box and Stories, then the top bar |
+| Left / Right | Move along the Like / Comment / Share row (and between Stories or other cards) |
+| OK | Open what is selected. On a video: play it large over the page (see Videos) |
+| CH ∨ / CH ∧ | Scroll one screen down / up; hold to scroll continuously |
+| Back | Jump to the top bar (Home tab); Back again on the top bar closes the app |
+
+On the top bar, Left / Right move between tabs (Home, Reels, Friends...), Down goes back into the page and OK
+opens the tab.
+
+### Reels
+
+| Key | Action |
+|---|---|
+| Left / Right | Seek back / forward 10 seconds (hold for a steady repeat) |
+| Up / Down, CH ∧ / CH ∨ | Previous / next Reel; it starts playing by itself |
+| OK | Play / pause |
+| OK held (0.8 s) | Button mode: a "Buttons: Back to return" banner, and the arrows move the focus ring between Like, Comment, Share and the other buttons; OK presses the selected one |
+| Back | In button mode: back to watching the same Reel. Otherwise: back to the feed in one step, however many Reels were watched |
+
+Button mode also ends with another long OK, or after 8 seconds without a key. Sound is always switched on. While
+seeking, a "+10s" / "-10s" flash and a progress bar appear for a moment.
+
+### Videos in the feed
+
+| Key | Action |
+|---|---|
+| OK | Play / pause (the video fills the screen below the top bar) |
+| Left / Right | Seek back / forward 10 seconds |
+| Back | Return to the feed (the video pauses) |
+
+### Comments, menus and other pages
+
+The arrows move the focus ring to the nearest button or link in that direction, and OK opens it. Opening a post's
+comments (Blue, or OK on Comment) scrolls to the first comment. CH ∨ / CH ∧ scroll the comments (hold for
+continuous scrolling). Back leaves a text box first, then closes the comments or menu.
+
+### Shortcut keys
+
+| Key | Action |
+|---|---|
+| Red | Home feed (from the feed itself: back to the first post) |
+| Green | Reels |
+| Yellow | Like / unlike the current post or Reel |
+| Blue | Open the comments of the current post or Reel |
+| Menu (≡) | Jump to the top bar |
+| 0 | Reload the page, if Facebook gets stuck |
+| Play/Pause, Rewind, Fast-forward | Control the current video, on remotes that have these keys |
+
+Leaving the app, with Back from the top bar or with the Home button, closes it completely and frees its memory;
+the login is kept.
+
 ## Debug vs release builds
 
 - `./gradlew assembleDebug` builds `com.avinash.facebookfeed.debug`, labelled "Facebook Feed (debug)", signed with
