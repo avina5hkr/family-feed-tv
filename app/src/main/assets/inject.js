@@ -134,9 +134,12 @@
   }
 
   /** All clickable elements in scope; nested clickables covering the same area count once (outermost wins). */
-  function clickables(scope, minSide) {
+  function clickables(scope, minSide, skip) {
     var all = scope.querySelectorAll(CLICKABLE), set = new Set(), out = [];
-    for (var i = 0; i < all.length; i++) if (usable(all[i], minSide)) set.add(all[i]);
+    for (var i = 0; i < all.length; i++) {
+      if (skip && all[i].closest(skip)) continue;
+      if (usable(all[i], minSide)) set.add(all[i]);
+    }
     set.forEach(function (el) {
       var r = rectOf(el);
       for (var p = el.parentElement; p && p !== scope; p = p.parentElement) {
@@ -413,6 +416,10 @@
     var ps = posts();
     if (ps.length === 0) return clickables(document.body, 12);
     var out = headerTargets();
+    // Things in the feed column that aren't posts: prompts such as "Remember password" (OK / Not now), the
+    // "What's on your mind" box and the Stories row.
+    var main = document.querySelector('[role=main]');
+    if (main) out = out.concat(clickables(main, 24, '[aria-posinset]'));
     for (var i = 0; i < ps.length; i++) {
       if (usable(ps[i], 1)) out = out.concat(postTargets(ps[i]));
     }
