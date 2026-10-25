@@ -48,6 +48,11 @@
     return;
   }
 
+  // Facebook replaces the page's timer functions with its own once its scripts load. A timer started with one
+  // pair and cleared with the other is never cleared, so keep the pair we started with.
+  var setIntervalOwn = window.setInterval.bind(window);
+  var clearIntervalOwn = window.clearInterval.bind(window);
+
   var focused = null;      // element carrying the focus ring
   var lastRect = null;     // where it was, to recover when Facebook removes it from the page
   var quietUntil = 0;      // no automatic focus recovery while our own smooth scroll is still running
@@ -254,7 +259,7 @@
    */
   function finishEntryRestore() {
     if (!restoring || !restoringEntry || !reelVideo()) return;
-    clearInterval(restoreTimer);
+    clearIntervalOwn(restoreTimer);
     restoring = false;
     setFocus(slotElement(reelSlot), false);
   }
@@ -286,13 +291,16 @@
     var slot = reelSlot, started = Date.now();
     restoringEntry = !oldVideo;
     note('restore start slot=' + JSON.stringify(slot) + ' old=' + describe(oldVideo));
-    clearInterval(restoreTimer);
+    clearIntervalOwn(restoreTimer);
     restoring = true;
-    restoreTimer = setInterval(function () {
+    var done = false;
+    var timer = restoreTimer = setIntervalOwn(function () {
+      if (done || timer !== restoreTimer) { clearIntervalOwn(timer); return; }
       var v = reelVideo(), waited = Date.now() - started;
       if (!isReels() || waited > 3000 || (v && v !== oldVideo && onScreen(v) && waited > 300)) {
+        done = true;
+        clearIntervalOwn(timer);
         note('restore end after ' + waited + 'ms reels=' + isReels() + ' video=' + describe(v));
-        clearInterval(restoreTimer);
         restoring = false;
         var el = isReels() ? slotElement(slot) : null;
         if (el) { setFocus(el, false); reelSlot = slot; } else recoverFocus();
