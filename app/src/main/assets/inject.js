@@ -17,6 +17,8 @@
 (function () {
   var ZOOM = __PAGE_ZOOM_PERCENT__ / 100;
   var DEBUG = __DEBUG__;  // true in debug builds: log the detected mode on every key
+  // Reels only: size of the account name and caption block over the video (1 = Facebook's size).
+  var REELS_CAPTION_SCALE = __REELS_CAPTION_SCALE_PERCENT__ / 100;
   var SCROLL_STEP = 350;
   var SEEK_SECONDS = 10;
   var FOCUS_ATTR = 'data-fbtv-focus';
@@ -324,6 +326,79 @@
     return bs.length === 2 ? { prev: bs[0], next: bs[1] } : null;
   }
 
+  // ---------- Smaller caption on Reels ----------
+  //
+  // The account name and caption sit in an absolutely positioned block anchored to the bottom of the video. Its font
+  // sizes are fixed px values on inner elements, so the whole block gets CSS zoom: it stays the width of the video and
+  // the smaller text re-flows into fewer lines (a transform would keep the old line breaks).
+  // Found by structure only: the nearest absolutely positioned ancestor of the creator's profile link (a link with
+  // text in the lower part of the video, inside that reel's own container). Marked with an attribute; a style that
+  // exists only while on a reel scales the marked blocks.
+
+  var CAPTION_ATTR = 'data-fbtv-reel-caption';
+  var CAPTION_STYLE_ID = 'fbtv-reel-caption-style';
+
+  /** The smallest element around this video that holds no other video: one reel. */
+  function reelUnit(video) {
+    var unit = video;
+    for (var a = video.parentElement; a && a !== document.body; a = a.parentElement) {
+      if (a.querySelectorAll('video').length > 1) break;
+      unit = a;
+    }
+    return unit;
+  }
+
+  function reelCaption(video) {
+    var vr = rectOf(video);
+    if (vr.height < 50) return null;
+    var name = Array.prototype.filter.call(reelUnit(video).querySelectorAll('a[href]'), function (l) {
+      var r = rectOf(l);
+      return r.width > 0 && r.top > vr.top + vr.height * 0.4 && r.top < vr.bottom && (l.textContent || '').trim();
+    })[0];
+    for (var e = name; e && !e.contains(video); e = e.parentElement) {
+      if (getComputedStyle(e).position === 'absolute' && rectOf(e).height > 0) return { block: e, name: name };
+    }
+    return null;
+  }
+
+  /**
+   * "See more" in the caption: a text-only button below the name row that sits inline at the end of a longer text.
+   * That leaves out Follow (on the name row) and the audio row (has a music icon, no surrounding text).
+   */
+  function reelSeeMore(video) {
+    var c = video && reelCaption(video);
+    if (!c) return [];
+    var nameBottom = rectOf(c.name).bottom;
+    return Array.prototype.filter.call(c.block.querySelectorAll('[role=button]'), function (b) {
+      var own = (b.textContent || '').trim().length;
+      var around = b.parentElement ? (b.parentElement.textContent || '').trim().length : 0;
+      return own > 0 && around >= own + 15 && !b.querySelector('svg, img') && rectOf(b).top >= nameBottom + 2 &&
+          usable(b, 1);
+    }).slice(0, 1);
+  }
+
+  function updateReelCaptions() {
+    var style = document.getElementById(CAPTION_STYLE_ID);
+    if (!isReels() || REELS_CAPTION_SCALE === 1) {
+      if (style) style.remove();
+      Array.prototype.forEach.call(document.querySelectorAll('[' + CAPTION_ATTR + ']'), function (e) {
+        e.removeAttribute(CAPTION_ATTR);
+      });
+      return;
+    }
+    if (!style) {
+      style = document.createElement('style');
+      style.id = CAPTION_STYLE_ID;
+      style.textContent = '[' + CAPTION_ATTR + ']{zoom:' + REELS_CAPTION_SCALE + ' !important;}';
+      (document.head || document.documentElement).appendChild(style);
+    }
+    // The current reel and the ones loaded next to it, so the size doesn't jump when the next one slides in.
+    Array.prototype.forEach.call(document.querySelectorAll('video'), function (v) {
+      var c = reelCaption(v);
+      if (c && !c.block.hasAttribute(CAPTION_ATTR)) c.block.setAttribute(CAPTION_ATTR, '');
+    });
+  }
+
   /** The vertical scroll-snap container that holds the reels. */
   function reelScroller(video) {
     for (var e = video && video.parentElement; e; e = e.parentElement) {
@@ -426,7 +501,7 @@
     if (isReels()) {
       var v = reelVideo(), nav = reelNavButtons();
       var arrows = nav ? [nav.prev, nav.next].filter(function (b) { return b.getAttribute('aria-disabled') !== 'true'; }) : [];
-      return headerTargets().concat(v && !buttonMode ? [v] : [], reelActions(v), arrows);
+      return headerTargets().concat(v && !buttonMode ? [v] : [], reelActions(v), arrows, buttonMode ? reelSeeMore(v) : []);
     }
     var ps = posts();
     if (ps.length === 0) return clickables(document.body, 12);
@@ -1033,6 +1108,7 @@
 
     if (isReels()) finishEntryRestore();
     if (buttonMode && !inReelViewer()) exitButtonMode(false);  // comments opened, or left Reels
+    updateReelCaptions();
 
     var m = mode();
     if (DEBUG) {
@@ -1158,6 +1234,7 @@
   // ---------- Keep the ring alive ----------
 
   function refresh() {
+    updateReelCaptions();
     if (location.pathname !== lastPath) {
       note('path ' + lastPath + ' -> ' + location.pathname + ' restoring=' + restoring);
       var wasReels = /^\/reels?\//.test(lastPath);

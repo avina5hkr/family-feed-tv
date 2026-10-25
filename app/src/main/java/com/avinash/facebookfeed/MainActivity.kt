@@ -38,6 +38,7 @@ class MainActivity : Activity() {
         assets.open("inject.js").bufferedReader().use { it.readText() }
             .replace("__PAGE_ZOOM_PERCENT__", PAGE_ZOOM_PERCENT.toString())
             .replace("__DEBUG__", isDebug.toString())
+            .replace("__REELS_CAPTION_SCALE_PERCENT__", REELS_CAPTION_SCALE_PERCENT.toString())
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -337,6 +338,9 @@ class MainActivity : Activity() {
 
         /** Page zoom in percent: 125 lays the page out 768 CSS px wide on a 1080p TV (100 = 960). Tune this on the TV. */
         private const val PAGE_ZOOM_PERCENT = 125
+
+        /** Reels only: size of the account name and caption over the video, in percent of Facebook's (100 = unchanged). */
+        private const val REELS_CAPTION_SCALE_PERCENT = 70
 
         private const val CACHE_LIMIT_BYTES = 50L * 1024 * 1024
 
