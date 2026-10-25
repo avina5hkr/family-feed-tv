@@ -1,0 +1,16 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Throwaway Test
+Signer #1 certificate SHA-1 digest: 5d3f8902fba7fa6e79c9b8ba1c1863b39e104177
+Signer #1 certificate MD5 digest: 796f9f4958670c3bca76c11594b980e5
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+Signer #1 public key SHA-256 digest: 7accba2479218fca83151cc064c36ba5a37135c81c9166bba6cb8390117568a9
+Signer #1 public key SHA-1 digest: e39bda4cf69e8a2e9aebab0477046ad219eaa325
+Signer #1 public key MD5 digest: a7fa04786dca8d553b29426ea13ff4c7

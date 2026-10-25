@@ -30,7 +30,8 @@ concurrency:
 jobs:
   build:
     name: Build, sign and verify APK
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is about to move to a newer Ubuntu, and release tooling must not change under it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release
     permissions:
@@ -228,7 +229,7 @@ jobs:
     needs: build
     # Tag pushes only. A dry run (workflow_dispatch) never gets here.
     if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
