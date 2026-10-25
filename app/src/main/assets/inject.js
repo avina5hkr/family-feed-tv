@@ -168,6 +168,11 @@
 
   // ---------- Page modes ----------
 
+  function inDialog(el) {
+    var dialog = topDialog();
+    return !!(dialog && el && dialog.contains(el));
+  }
+
   function topDialog() {
     var ds = document.querySelectorAll('[role=dialog],[aria-modal=true],[role=menu]');
     for (var i = ds.length - 1; i >= 0; i--) {
@@ -684,6 +689,9 @@
   function revealElement(el, smooth) {
     var r = rectOf(el), scroller = scrollerOf(el);
     if (el.closest('[role=banner]') && !el.closest('[role=dialog]')) return;  // the fixed top bar itself
+    // A dialog or menu floats over the page: if it has no scrolling area of its own, scrolling the page behind it
+    // only moves the feed.
+    if (!scroller && inDialog(el)) return;
     var top = scroller ? rectOf(scroller).top : headerBottom(), bottom = scroller ? rectOf(scroller).bottom : innerHeight;
     var post = !scroller && postOf(el), dy;
     if (post) {
@@ -765,7 +773,9 @@
     if (next) {
       setFocus(next, smooth ? 'smooth' : 'instant');
     } else if (vertical && !isReels()) {
-      scrollByY(scrollerOf(focused), dir === 'down' ? SCROLL_STEP : -SCROLL_STEP, smooth);
+      var scroller = scrollerOf(focused);
+      if (!scroller && inDialog(focused)) return;
+      scrollByY(scroller, dir === 'down' ? SCROLL_STEP : -SCROLL_STEP, smooth);
       setTimeout(function () { if (!onScreen(focused)) recoverFocus(); }, 500);
     }
   }
@@ -1262,6 +1272,15 @@
     }
     var dialog = topDialog();
     if (dialog) {
+      // Menus opened from the top bar (profile, Facebook menu, notifications...) ignore Escape and have no Close
+      // button: they close with the button that opened them. The ring goes back to that button.
+      var toggle = dialog.closest('[role=banner]') && Array.prototype.filter.call(
+          document.querySelectorAll('[role=banner] [aria-expanded=true]'), function (b) { return !dialog.contains(b); })[0];
+      if (toggle) {
+        toggle.click();
+        setFocus(toggle, false);
+        return 'handled';
+      }
       var target = document.activeElement || document.body;
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
       setTimeout(function () {
