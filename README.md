@@ -4,6 +4,8 @@ An Android TV app for my mom that opens Facebook's website (www.facebook.com, de
 
 - D-pad moves a visible focus ring between posts and buttons, and OK clicks.
 - Back closes fullscreen video, then goes back in history.
+- Colour keys, CH ∧ / ∨ and a few other keys are shortcuts, and a pointer appears for CAPTCHAs; see
+  [Remote controls](#remote-controls).
 - Login is kept across restarts and reboots.
 - Builds are signed and published as GitHub Releases.
 
@@ -14,6 +16,13 @@ Not affiliated with Facebook or Meta.
 ## Remote controls
 
 All keys are handled inside the app only; no system-wide remote settings are changed.
+
+<p align="center">
+  <img src="docs/remote-controls.png" width="760"
+       alt="The TV remote with each key the app uses labelled: 5 pointer, 0 reload, Menu top bar, colour keys, arrows, OK, Back, Home and CH">
+</p>
+
+The tables below give the details for each part of the app.
 
 ### Feed
 
@@ -122,3 +131,4 @@ environment's secrets `ANDROID_SIGNING_KEY_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
 - `app/src/main/assets/inject.js`: the remote-control navigation injected into the page.
 - `tools/icon/Icon.java`: generates the launcher icon and TV banner
   (`java -Djava.awt.headless=true tools/icon/Icon.java app/src/main/res <preview dir>`).
+- `tools/remote/make.py`: draws `docs/remote-controls.png` (see the comment at its top for the render command).
