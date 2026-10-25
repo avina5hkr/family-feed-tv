@@ -2,9 +2,11 @@
 # Tests the parser in scripts/check-cert.sh on saved `apksigner verify --verbose --print-certs` outputs in
 # scripts/testdata. No Android SDK or APK needed.
 #
-# apksigner-signer-number.txt is real output for an APK signed with a throwaway test key (public fingerprint below);
-# the other files are derived from it: apksigner's "Signer (minSdkVersion=..., maxSdkVersion=...)" format, no
-# certificate digest line, and a second signer with a different certificate.
+# apksigner-signer-number.txt is real output (build-tools 36.0.0) for an APK signed with a throwaway test key (public
+# fingerprint below). apksigner-v2-signer.txt has the layout build-tools 37.0.0 printed on the GitHub runner
+# ("V2 Signer: certificate SHA-256 digest: ..."), with the throwaway key's values. The other files are derived from
+# the first: apksigner's "Signer (minSdkVersion=..., maxSdkVersion=...)" format, no certificate digest line, and a
+# second signer with a different certificate.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -28,6 +30,7 @@ expect() {
 
 expect pass "Signer #1 format"                                   apksigner-signer-number.txt    "$FP"
 expect pass "Signer (minSdkVersion=..., maxSdkVersion=...) format" apksigner-signer-sdk-range.txt "$FP"
+expect pass "V2 Signer: format (build-tools 37.0.0)"             apksigner-v2-signer.txt        "$FP"
 expect pass "expected value with colons and upper case"          apksigner-signer-number.txt    "$FP_COLONS"
 expect fail "no certificate digest line"                         apksigner-no-digest.txt        "$FP"
 expect fail "wrong fingerprint"                                  apksigner-signer-number.txt    "$WRONG"
