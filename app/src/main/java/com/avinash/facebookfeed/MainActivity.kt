@@ -121,17 +121,49 @@ class MainActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) handleBack()
             return true
         }
+        val mediaAction = MEDIA_KEYS[event.keyCode]
+        if (mediaAction != null) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !webViewDestroyed) {
+                webView.evaluateJavascript("window.__fbtv && window.__fbtv.media('$mediaAction')", null)
+            }
+            return true
+        }
         return super.dispatchKeyEvent(event)
     }
 
-    /** Back: close fullscreen video, then go back in history, and exit only when there is no history left. */
+    /**
+     * Back: close fullscreen video, then let the page close a dialog or leave a text field (or jump to the top of
+     * a scrolled feed), then go back in history, and exit only when there is no history left.
+     */
     private fun handleBack() {
-        when {
-            customView != null -> hideCustomView()
-            !webViewDestroyed && webView.canGoBack() -> webView.goBack()
-            else -> finish()
+        if (customView != null) {
+            hideCustomView()
+            return
+        }
+        if (webViewDestroyed) {
+            finish()
+            return
+        }
+        webView.evaluateJavascript("window.__fbtv ? window.__fbtv.back() : 'none'") { result ->
+            if (webViewDestroyed) return@evaluateJavascript
+            when (result?.trim('"')) {
+                "handled" -> Unit
+                "reels" -> goBackPast { isReelUrl(it) }
+                else -> goBackPast { false }
+            }
         }
     }
+
+    /** Goes back to the newest history entry that [skip] rejects; every reel watched is its own entry. */
+    private fun goBackPast(skip: (String) -> Boolean) {
+        val history = webView.copyBackForwardList()
+        var index = history.currentIndex - 1
+        while (index >= 0 && skip(history.getItemAtIndex(index).url)) index--
+        if (index >= 0) webView.goBackOrForward(index - history.currentIndex) else finish()
+    }
+
+    private fun isReelUrl(url: String): Boolean =
+        android.net.Uri.parse(url).path?.let { it.startsWith("/reel/") || it.startsWith("/reels/") } == true
 
     private fun hideCustomView() {
         val view = customView ?: return
@@ -260,10 +292,19 @@ class MainActivity : Activity() {
         private const val HOME_URL = "https://$DESKTOP_HOST/"
         private val PHONE_SITE_HOSTS = setOf("m.facebook.com", "mobile.facebook.com", "touch.facebook.com", "mbasic.facebook.com")
 
-        /** Page zoom in percent: 100 lays the page out 960 CSS px wide on a 1080p TV. Tune this on the TV. */
-        private const val PAGE_ZOOM_PERCENT = 100
+        /** Page zoom in percent: 125 lays the page out 768 CSS px wide on a 1080p TV (100 = 960). Tune this on the TV. */
+        private const val PAGE_ZOOM_PERCENT = 125
 
         private const val CACHE_LIMIT_BYTES = 50L * 1024 * 1024
+
+        /** Remote media keys, if the remote has them, mapped to window.__fbtv.media() actions. */
+        private val MEDIA_KEYS = mapOf(
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE to "toggle",
+            KeyEvent.KEYCODE_MEDIA_PLAY to "play",
+            KeyEvent.KEYCODE_MEDIA_PAUSE to "pause",
+            KeyEvent.KEYCODE_MEDIA_REWIND to "rewind",
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD to "forward",
+        )
         private val WEB_SCHEMES = setOf("http", "https", "about", "data", "blob", "javascript")
     }
 }
