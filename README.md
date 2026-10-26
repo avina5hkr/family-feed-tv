@@ -137,12 +137,12 @@ prereleases never count) and, if it is newer, downloads `family-feed.apk`, check
 app, and installs it. A banner shows each step in Hindi and English; anything that fails is shown and nothing is
 installed.
 
-- **Once:** Android asks to allow "Install unknown apps" for Family Feed. Pressing 9 opens that settings page; press
-  OK on Family Feed, then Back.
-- **First update after installing with adb:** Android shows "Do you want to update this app?". The focus starts on
-  Cancel: press Left onto **Update**, then OK.
-- **Later updates** install without that screen (the app is then its own installer).
-- The app closes to be replaced; open Family Feed again from the home screen. The login is kept.
+- **Once:** Android has to allow "Install unknown apps" for Family Feed. Pressing 9 opens that settings list (on the
+  TCL the focus starts on the first app): press Down to **Family Feed**, OK, then Back, and press 9 again.
+- The update then installs without asking (Android 12+ lets an app update itself). The app closes to be replaced;
+  open Family Feed again from the home screen. The login is kept.
+- If a TV does show "Do you want to update this app?", the focus starts on Cancel: press Left onto **Update**, then
+  OK.
 
 The first release with key 9 still has to be installed by hand (download from GitHub, check, `adb install -r`).
 
