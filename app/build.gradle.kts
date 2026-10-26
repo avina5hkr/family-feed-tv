@@ -50,12 +50,16 @@ android {
             // Installs next to the release build; the launcher label comes from src/debug/res.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // Key 9 in debug builds reads this fake release instead of GitHub (whose releases are the release app):
+            // -PupdateTestUrl=http://<Mac>:8000/latest.json. Without it, 9 only says so.
+            buildConfigField("String", "UPDATE_TEST_URL", "\"${providers.gradleProperty("updateTestUrl").getOrElse("")}\"")
         }
         release {
             optimization {
                 enable = false
             }
             if (canSignRelease) signingConfig = signingConfigs.getByName("release")
+            buildConfigField("String", "UPDATE_TEST_URL", "\"\"")
         }
     }
     buildFeatures {

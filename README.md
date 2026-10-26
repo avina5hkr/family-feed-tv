@@ -107,9 +107,13 @@ the login is kept.
   the local debug key. It installs next to the release app, with its own login. It can open any https page, for
   testing pages Facebook shows only sometimes:
   `adb shell am start -n com.avinash.facebookfeed.debug/com.avinash.facebookfeed.MainActivity --es url https://www.google.com/recaptcha/api2/demo`
-  (release builds ignore the `url` extra). For testing key 9, `--es update_api http://127.0.0.1:8000/latest.json`
-  makes it read a release in GitHub's JSON format from a local server (reached with `adb reverse tcp:8000 tcp:8000`)
-  instead of GitHub.
+  (release builds ignore the `url` extra).
+- Key 9 in a debug build never uses GitHub (its releases are the release app). To test updating, serve a fake release
+  in GitHub's JSON format (`latest.json`, a newer debug APK as `family-feed.apk`, and its `.sha256`) from the Mac,
+  e.g. `python3 -m http.server 8000 --bind <Mac IP> -d <folder>`, and either build the debug app with
+  `-PupdateTestUrl=http://<Mac IP>:8000/latest.json` (every press of 9 then uses it) or start it with
+  `--es update_api <url>` (until the app closes; `adb reverse tcp:8000 tcp:8000` makes `http://127.0.0.1:8000` work).
+  Debug builds allow plain http for this; release builds don't.
 - `./gradlew assembleRelease` builds `com.avinash.facebookfeed`. It is signed only when `KEYSTORE_PATH`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` are set in the environment; otherwise the APK is unsigned.
   No keystore or password is ever stored in the repository.

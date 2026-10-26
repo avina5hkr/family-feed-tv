@@ -37,6 +37,15 @@ object Updater {
     /** Debug builds only: a release JSON to use instead of GitHub's, for testing (see MainActivity's update_api extra). */
     var apiOverride: String? = null
 
+    /**
+     * Debug builds read a fake release (the update_api extra, or -PupdateTestUrl at build time): GitHub's releases are
+     * the release app, which a debug build must not install. Null in release builds.
+     */
+    private fun testSource(): String? {
+        if (!BuildConfig.DEBUG) return null
+        return apiOverride ?: BuildConfig.UPDATE_TEST_URL.ifEmpty { null }
+    }
+
     /** A confirmation screen from the system installer is (about to be) on top: don't close the app on onStop. */
     @Volatile var awaitingUserAction = false
 
@@ -52,6 +61,10 @@ object Updater {
 
     private fun run(context: Context) {
         try {
+            if (BuildConfig.DEBUG && testSource() == null) {
+                finish(context.getString(R.string.update_debug_no_test))
+                return
+            }
             status(context.getString(R.string.update_checking))
             val release = latestRelease()
             val current = currentVersionCode(context)
@@ -92,7 +105,7 @@ object Updater {
     private class UpdateException(message: String) : Exception(message)
 
     private fun latestRelease(): Release {
-        val api = apiOverride ?: "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest"
+        val api = testSource() ?: "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest"
         val json = JSONObject(String(download(api, null)))
         val tag = json.getString("tag_name")
         val match = Regex("""^v(\d+)\.(\d+)\.(\d+)$""").find(tag) ?: throw UpdateException("unexpected tag $tag")
@@ -150,13 +163,17 @@ object Updater {
         }
     }
 
-    /** https to GitHub only (debug builds testing with [apiOverride] may also use http://127.0.0.1). */
+    /** https to GitHub only; debug builds download only from their fake release's host. */
     private fun checkUrl(url: URL) {
         val host = url.host.lowercase()
-        val github = url.protocol == "https" &&
-            (host == "github.com" || host == "api.github.com" || host.endsWith(".githubusercontent.com"))
-        val local = BuildConfig.DEBUG && apiOverride != null && (host == "127.0.0.1" || host == "localhost")
-        if (!github && !local) throw UpdateException("refusing to download from $host")
+        val test = testSource()
+        val allowed = if (test != null) {
+            host == URL(test).host.lowercase()
+        } else {
+            url.protocol == "https" &&
+                (host == "github.com" || host == "api.github.com" || host.endsWith(".githubusercontent.com"))
+        }
+        if (!allowed) throw UpdateException("refusing to download from $host")
     }
 
     private fun verify(context: Context, apk: File, expectedSha256: String, current: Long) {

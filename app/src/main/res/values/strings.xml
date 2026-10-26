@@ -8,5 +8,6 @@
     <string name="update_installing">ऐप बंद होकर अपडेट होगा, फिर Family Feed दोबारा खोलें · The app will close and update; open Family Feed again afterwards</string>
     <string name="update_permission">पहले अनुमति दें: Settings › Apps › Special app access › Install unknown apps › Family Feed · Allow it first in Settings</string>
     <string name="update_cancelled">अपडेट रद्द किया गया · Update cancelled</string>
+    <string name="update_debug_no_test">Debug app: GitHub releases are for the release app. Build it with -PupdateTestUrl to test updates (see README)</string>
     <string name="update_failed">अपडेट नहीं हो पाया · Update failed: %1$s</string>
 </resources>
