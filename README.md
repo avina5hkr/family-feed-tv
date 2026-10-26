@@ -19,7 +19,7 @@ All keys are handled inside the app only; no system-wide remote settings are cha
 
 <p align="center">
   <img src="docs/remote-controls.png" width="760"
-       alt="The TV remote with each key the app uses labelled: 5 pointer, 0 reload, Menu top bar, colour keys, arrows, OK, Back, Home and CH">
+       alt="The TV remote with each key the app uses labelled: 5 pointer, 9 update, 0 reload, colour keys, arrows, OK, Back, Home and CH">
 </p>
 
 The tables below give the details for each part of the app.
@@ -92,7 +92,6 @@ automatically.
 | Green | Reels |
 | Yellow | Like / unlike the current post or Reel |
 | Blue | Open the comments of the current post or Reel |
-| Menu (≡) | Jump to the top bar |
 | 0 | Reload the page, if Facebook gets stuck |
 | 5 | Pointer mode on / off (see above) |
 | 9 | Check for an update and install it (see [Updating the app](#updating-the-app-key-9)) |

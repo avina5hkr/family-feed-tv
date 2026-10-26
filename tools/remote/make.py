@@ -68,9 +68,9 @@ circle(775, 340, 26, dim=True)
 a(f'<path d="M766 {y(331)} h14 v18 h-14 M760 {y(340)} h12 m-4 -4 l4 4 l-4 4" fill="none" stroke="#9aa0a8" stroke-width="2.5"/>')
 circle(850, 340, 26, accent=True)
 text(850, 340, '0', size=26)
-circle(925, 340, 26, accent=True)
+circle(925, 340, 26, dim=True)  # Menu: the TV keeps it for its own settings
 for dy in (-7, 0, 7):
-    a(f'<line x1="914" y1="{y(340 + dy)}" x2="936" y2="{y(340 + dy)}" stroke="#fff" stroke-width="3" stroke-linecap="round"/>')
+    a(f'<line x1="914" y1="{y(340 + dy)}" x2="936" y2="{y(340 + dy)}" stroke="#9aa0a8" stroke-width="3" stroke-linecap="round"/>')
 
 # colour keys
 for cx, col in ((760, '#e53935'), (820, '#2fb35a'), (880, '#f2b600'), (940, '#2f7de1')):
@@ -143,8 +143,6 @@ labels = [
      [(L, 960), (735, 952)], True),
     ('R', 175, '9  ·  Update the app', ['Only when you ask her to:', 'checks GitHub, then installs'],
      [(R, 175), (1010, 270), (956, 270)]),
-    ('R', 300, 'Menu ≡  ·  Top bar', ['Home, Reels, Friends…', 'and the profile menu'],
-     [(R, 300), (1010, 340), (956, 340)]),
     ('R', 420, 'Blue  ·  Comments', ['Of the current post or Reel'],
      [(R, 420), (1010, 405), (964, 405)]),
     ('R', 530, 'Yellow  ·  Like / unlike', ['The current post or Reel'],
